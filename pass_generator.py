@@ -151,24 +151,25 @@ class PassGenerator:
         colorless_values = []
         colored_values = []
 
-        # Extract full 72-character strings
-        for i in range(72):
-            x = i % 12
-            y = i // 12
-            
-            # Sample colorless grid
-            sample_x = start_x + x * self.grid_size + self.grid_size // 2
-            sample_y = line_y + y * self.grid_size + self.grid_size // 2
-            value = line_data[sample_y][sample_x][0]
-            colorless_values.append(format(value // 16, 'x'))
+        # Extract patterns for both parts
+        for y in range(self.colorless_height):
+            for x in range(self.colorless_width):
+                # Sample colorless grid
+                sample_x = start_x + x * self.grid_size + self.grid_size // 2
+                sample_y = line_y + y * self.grid_size + self.grid_size // 2
+                value = line_data[sample_y][sample_x][0]
+                colorless_values.append(format(value // 16, 'x'))
 
-            # Sample colored grid
-            colored_start_x = start_x + (self.colorless_width * self.grid_size) + self.line_spacing
-            sample_x = colored_start_x + x * self.grid_size + self.grid_size // 2
-            r, g, b = line_data[sample_y][sample_x]
-            color_value = format(((r // 16) << 4) | (g // 16), 'x')
-            colored_values.append(color_value)
+                # Sample colored grid
+                colored_start_x = start_x + (self.colorless_width * self.grid_size) + self.line_spacing
+                sample_x = colored_start_x + x * self.grid_size + self.grid_size // 2
+                r, g, b = line_data[sample_y][sample_x]
+                r_val = (r > 32) * 4
+                g_val = (g > 32) * 2
+                b_val = (b > 32) * 1
+                colored_values.append(format(r_val + g_val + b_val, 'x'))
 
+        # Join all values to create the complete patterns
         return (''.join(colorless_values), ''.join(colored_values))
 
     def verify_pass_image(self, image_path: str, user_pass: UserPass) -> tuple[bool, list[str], Image.Image]:
@@ -182,11 +183,19 @@ class PassGenerator:
                 return False, discrepancies, image
 
             # Extract and verify the verification line
-            colorless, colored = self.extract_verification_line(image)
-            if colorless != user_pass.pass_identifier.colorless_part:
+            extracted_colorless, extracted_colored = self.extract_verification_line(image)
+            expected_colorless = user_pass.pass_identifier.colorless_part[:72]  # Only compare first 72 chars
+            expected_colored = user_pass.pass_identifier.colored_part[:72]
+
+            if extracted_colorless != expected_colorless:
                 discrepancies.append("Invalid faction/nation identifier")
-            if colored != user_pass.pass_identifier.colored_part:
+                print(f"Expected colorless: {expected_colorless}")
+                print(f"Extracted colorless: {extracted_colorless}")
+
+            if extracted_colored != expected_colored:
                 discrepancies.append("Invalid user identifier")
+                print(f"Expected colored: {expected_colored}")
+                print(f"Extracted colored: {extracted_colored}")
 
             # Create a copy for marking discrepancies
             marked_image = image.copy()

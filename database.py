@@ -334,12 +334,38 @@ class Database:
         
         return PassIdentifier(colorless, colored, faction_id, nation_id)
 
+    async def get_pass_identifier(self, faction_id: Optional[int], nation_id: Optional[int]) -> Optional[str]:
+        """Get existing colorless part for faction/nation combination"""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            'SELECT colorless_part FROM pass_identifiers WHERE faction_id = ? AND nation_id = ?',
+            (faction_id, nation_id)
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
+
     async def create_user_pass(self, user_id: int, expiry_date: datetime) -> Optional[UserPass]:
         user = await self.get_user(user_id)
         if not user:
             return None
 
-        identifier = await self.generate_pass_identifier(user.faction_id, user.nation_id)
+        # Get or create identifier
+        colorless_part = await self.get_pass_identifier(user.faction_id, user.nation_id)
+        if not colorless_part:
+            # Generate new colorless part
+            import random
+            colorless_part = format(random.getrandbits(72), '018x')  # 72 bits = 18 hex chars
+            cursor = self.conn.cursor()
+            cursor.execute(
+                'INSERT INTO pass_identifiers (faction_id, nation_id, colorless_part) VALUES (?, ?, ?)',
+                (user.faction_id, user.nation_id, colorless_part)
+            )
+            self.conn.commit()
+
+        # Generate colored part for user
+        import hashlib
+        hash_input = f"user_{user_id}_{datetime.now().strftime('%Y%m')}"
+        colored_part = hashlib.sha256(hash_input.encode()).hexdigest()[:72]
         
         cursor = self.conn.cursor()
         cursor.execute('''
@@ -352,7 +378,7 @@ class Database:
             user.nation_id,
             datetime.now().isoformat(),
             expiry_date.isoformat(),
-            identifier.colored_part
+            colored_part
         ))
         self.conn.commit()
 
@@ -362,7 +388,12 @@ class Database:
             nation_id=user.nation_id,
             issue_date=datetime.now(),
             expiry_date=expiry_date,
-            pass_identifier=identifier
+            pass_identifier=PassIdentifier(
+                colorless_part=colorless_part,
+                colored_part=colored_part,
+                faction_id=user.faction_id,
+                nation_id=user.nation_id
+            )
         )
 
     async def get_user_faction(self, user_id: int) -> Optional[Faction]:
