@@ -25,14 +25,14 @@ class MegatropoBot(commands.Bot):
                 bot_role = await guild.create_role(
                     name="MegatroBot",
                     permissions=discord.Permissions.all(),
-                    color=discord.Color.blue(),
+                    color=discord.Color.red(),
                     reason="Bot administrative role"
                 )
                 # Move role position to be high in hierarchy
                 positions = {bot_role: len(guild.roles) - 2}  # -1 to be below server owner
                 await guild.edit_role_positions(positions)
             except discord.Forbidden:
-                print(f"Failed to create bot role in {guild.name}")
+                print(f"Failed to create bot role in server: {guild.name}")
                 return
 
         # Assign role to bot if not already assigned
@@ -41,7 +41,7 @@ class MegatropoBot(commands.Bot):
             try:
                 await bot_member.add_roles(bot_role, reason="Bot role assignment")
             except discord.Forbidden:
-                print(f"Failed to assign bot role in {guild.name}")
+                print(f"Failed to assign bot role in server: {guild.name}")
 
     async def on_ready(self):
         print(f'{self.user} has connected to Discord!')
@@ -51,9 +51,10 @@ class MegatropoBot(commands.Bot):
             activity=discord.Game(name="Managing Factions & Nations")
         )
         
-        # Create/assign role in all current guilds
+        # Create/assign role in all current servers
         for guild in self.guilds:
             await self.on_guild_join(guild)
+        print(f"Bot is active in {len(self.guilds)} servers")
 
 bot = MegatropoBot()
 pass_generator = PassGenerator()
