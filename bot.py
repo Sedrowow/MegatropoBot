@@ -333,6 +333,7 @@ pass_generator = PassGenerator()
 @bot.event
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
+    await bot.tree.sync()  # Ensure commands are synced
     
 @bot.tree.command(name="balance", description="Check your balance")
 @in_command_channel()
@@ -881,6 +882,7 @@ async def announce(
     await interaction.response.send_message("Announcement(s) sent successfully!")
 
 @bot.tree.command(name="setup", description="Initialize bot setup for the server")
+@in_command_channel()
 @app_commands.checks.has_permissions(administrator=True)
 async def setup(interaction: discord.Interaction):
     """Initialize server structure and user data"""
