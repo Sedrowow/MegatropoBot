@@ -550,3 +550,15 @@ class Database:
             return True
         except sqlite3.Error:
             return False
+
+    async def create_faction(self, name: str, owner_id: int) -> bool:
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute(
+                'INSERT INTO factions (name, owner_id) VALUES (?, ?)',
+                (name, owner_id)
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
