@@ -3,17 +3,18 @@ from typing import List, Optional, Dict, Set
 from enum import Enum, auto
 from datetime import datetime
 
-class FactionPermission(Enum):
+class FactionPermission(Enum:
     ADD_MEMBERS = auto()
     MANAGE_MONEY = auto()
     MANAGE_RANKS = auto()
     MANAGE_ALLIANCES = auto()
+    MANAGE_ANNOUNCEMENTS = auto()
 
 @dataclass
 class Rank:
     name: str
     priority: int
-    permissions: Set[FactionPermission]
+    permissions: Set<FactionPermission]
 
 @dataclass
 class User:

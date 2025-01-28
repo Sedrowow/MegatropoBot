@@ -6,6 +6,7 @@ from database import Database
 from models import User, Faction, Nation, FactionPermission
 from datetime import datetime, timedelta
 from pass_generator import PassGenerator
+from typing import Optional
 
 class MegatropoBot(commands.Bot):
     def __init__(self):
@@ -13,6 +14,9 @@ class MegatropoBot(commands.Bot):
         intents.all
         super().__init__(command_prefix="!", intents=intents)
         self.db = Database()
+        self.command_channels = {}  # guild_id -> command_channel_id
+        self.faction_announcement_channels = {}  # guild_id -> channel_id
+        self.nation_announcement_channels = {}  # guild_id -> channel_id
 
     async def setup_hook(self):
         await self.tree.sync()
@@ -43,6 +47,12 @@ class MegatropoBot(commands.Bot):
             except discord.Forbidden:
                 print(f"Failed to assign bot role in server: {guild.name}")
 
+        # Setup categories and channels
+        try:
+            await self.setup_categories(guild)
+        except discord.Forbidden:
+            print(f"Failed to create categories in server: {guild.name}")
+
     async def on_ready(self):
         print(f'{self.user} has connected to Discord!')
         # Set bot's status to online and add custom status
@@ -55,6 +65,101 @@ class MegatropoBot(commands.Bot):
         for guild in self.guilds:
             await self.on_guild_join(guild)
         print(f"Bot is active in {len(self.guilds)} servers")
+
+    async def setup_categories(self, guild: discord.Guild):
+        # Create bot management category
+        bot_category = await guild.create_category(
+            "Bot Management",
+            overwrites={
+                guild.default_role: discord.PermissionOverwrite(read_messages=False),
+                guild.me: discord.PermissionOverwrite(read_messages=True)
+            }
+        )
+        
+        # Create command channel
+        cmd_channel = await bot_category.create_text_channel("megabot-cmd")
+        self.command_channels[guild.id] = cmd_channel.id
+
+        # Create announcement channels
+        faction_announce = await bot_category.create_text_channel(
+            "faction-announcements",
+            overwrites={
+                guild.default_role: discord.PermissionOverwrite(send_messages=False),
+                guild.me: discord.PermissionOverwrite(send_messages=True)
+            }
+        )
+        nation_announce = await bot_category.create_text_channel(
+            "nation-announcements",
+            overwrites={
+                guild.default_role: discord.PermissionOverwrite(send_messages=False),
+                guild.me: discord.PermissionOverwrite(send_messages=True)
+            }
+        )
+        
+        self.faction_announcement_channels[guild.id] = faction_announce.id
+        self.nation_announcement_channels[guild.id] = nation_announce.id
+
+    async def can_use_command(self, interaction: discord.Interaction) -> bool:
+        """Check if the user can use commands in this channel"""
+        # Staff and owners can use commands anywhere
+        if interaction.user.guild_permissions.administrator:
+            return True
+
+        # Check if in command channel
+        command_channel_id = self.command_channels.get(interaction.guild_id)
+        return interaction.channel_id == command_channel_id
+
+    async def create_faction_category(self, guild: discord.Guild, faction: Faction) -> Optional[discord.CategoryChannel]:
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(read_messages=False),
+            guild.me: discord.PermissionOverwrite(read_messages=True)
+        }
+        
+        # Get faction members and set permissions
+        members = await self.db.get_faction_members(faction.id)
+        for member_id in members:
+            member = guild.get_member(member_id)
+            if member:
+                overwrites[member] = discord.PermissionOverwrite(read_messages=True)
+
+        # If faction is part of a nation, add nation members
+        if faction.nation_id:
+            nation = await self.db.get_nation(faction.nation_id)
+            if nation:
+                nation_members = await self.db.get_nation_members(nation.id)
+                for member_id in nation_members:
+                    member = guild.get_member(member_id)
+                    if member:
+                        overwrites[member] = discord.PermissionOverwrite(read_messages=True)
+
+        try:
+            category = await guild.create_category(f"Faction-{faction.name}", overwrites=overwrites)
+            await category.create_text_channel("general")
+            await category.create_text_channel("announcements")
+            return category
+        except discord.Forbidden:
+            return None
+
+    async def create_nation_category(self, guild: discord.Guild, nation: Nation) -> Optional[discord.CategoryChannel]:
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(read_messages=False),
+            guild.me: discord.PermissionOverwrite(read_messages=True)
+        }
+        
+        # Get nation members and set permissions
+        members = await self.db.get_nation_members(nation.id)
+        for member_id in members:
+            member = guild.get_member(member_id)
+            if member:
+                overwrites[member] = discord.PermissionOverwrite(read_messages=True)
+
+        try:
+            category = await guild.create_category(f"Nation-{nation.name}", overwrites=overwrites)
+            await category.create_text_channel("general")
+            await category.create_text_channel("announcements")
+            return category
+        except discord.Forbidden:
+            return None
 
 bot = MegatropoBot()
 pass_generator = PassGenerator()
@@ -553,4 +658,71 @@ async def check_pass(interaction: discord.Interaction):
         )
         os.remove(marked_path)
 
-bot.run('YOUR_BOT_TOKEN')
+@bot.tree.command(name="announce", description="Make an announcement")
+async def announce(
+    interaction: discord.Interaction,
+    nation: bool,
+    faction: bool,
+    text: str
+):
+    # Check permissions
+    user = await bot.db.get_user(interaction.user.id)
+    can_announce_faction = False
+    can_announce_nation = False
+    
+    if faction:
+        user_faction = await bot.db.get_user_faction(user.id)
+        if user_faction:
+            rank = await bot.db.get_faction_member_rank(user_faction.id, user.id)
+            can_announce_faction = user_faction.owner_id == user.id or (rank and FactionPermission.MANAGE_ANNOUNCEMENTS in rank.permissions)
+
+    if nation:
+        user_nation = await bot.db.get_nation(user.nation_id) if user.nation_id else None
+        if user_nation:
+            can_announce_nation = user_nation.owner_id == user.id
+
+    if not (can_announce_faction or can_announce_nation):
+        await interaction.response.send_message("You don't have permission to make announcements!")
+        return
+
+    # Create announcement embed
+    embed = discord.Embed(
+        title="Announcement",
+        description=text,
+        color=discord.Color.blue() if faction else discord.Color.gold()
+    )
+    
+    if faction and can_announce_faction:
+        embed.set_author(name=user_faction.name)
+        if os.path.exists(f"images/faction_{user_faction.id}.png"):
+            embed.set_thumbnail(url=f"attachment://faction_icon.png")
+        
+        channel = interaction.guild.get_channel(bot.faction_announcement_channels[interaction.guild_id])
+        await channel.send(embed=embed)
+
+    if nation and can_announce_nation:
+        embed.set_author(name=user_nation.name)
+        if os.path.exists(f"images/nation_{user_nation.id}.png"):
+            embed.set_thumbnail(url=f"attachment://nation_icon.png")
+        
+        channel = interaction.guild.get_channel(bot.nation_announcement_channels[interaction.guild_id])
+        await channel.send(embed=embed)
+
+    await interaction.response.send_message("Announcement(s) sent successfully!")
+
+# Modify existing command decorator to include command restriction
+def command_check():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        return await bot.can_use_command(interaction)
+    return app_commands.check(predicate)
+
+# Apply command restriction to all commands
+for command in bot.tree.walk_commands():
+    command.add_check(command_check())
+
+# Get token from environment variable
+TOKEN = os.getenv('DCBOTTOKEN')
+if not TOKEN:
+    raise ValueError("No bot token found! Set the DCBOTTOKEN environment variable.")
+
+bot.run(TOKEN)

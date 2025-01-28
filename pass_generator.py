@@ -16,6 +16,37 @@ class PassGenerator:
         self.colored_height = 6    # 6 rows
         self.line_spacing = 4      # Space between colorless and colored parts
         self.grid_size = 2         # Size of each grid cell in pixels
+        self.grid_chars = 72  # 12x6 grid = 72 characters
+        self.default_pattern = self._generate_checker_pattern()
+
+    def _generate_checker_pattern(self) -> str:
+        """Generate a checker pattern for empty faction slots"""
+        pattern = ""
+        for i in range(self.grid_chars):
+            row = (i // 12) % 2  # Alternate by row
+            col = (i % 12) % 2   # Alternate by column
+            if row == col:
+                pattern += "8"  # Dark grey
+            else:
+                pattern += "4"  # Light grey
+        return pattern
+
+    def _generate_user_code(self, user_id: int) -> str:
+        """Generate a unique 72-character colored code for a user"""
+        import hashlib
+        # Create a hash from user ID
+        hash_input = f"user_{user_id}_{datetime.now().strftime('%Y%m')}"  # Changes monthly
+        hash_obj = hashlib.sha256(hash_input.encode())
+        # Convert hash to hex and expand to 72 chars
+        hex_hash = hash_obj.hexdigest()
+        return (hex_hash * 3)[:72]  # Repeat hash to reach 72 chars
+
+    def _generate_entity_code(self, entity_type: str, entity_id: int) -> str:
+        """Generate a unique 72-character code for a faction or nation"""
+        import hashlib
+        hash_input = f"{entity_type}_{entity_id}"
+        hash_obj = hashlib.sha256(hash_input.encode())
+        return (hash_obj.hexdigest() * 3)[:72]
 
     def create_pass_image(self, user_pass: UserPass, username: str) -> Image.Image:
         img = Image.new('RGB', (self.width, self.height), 'white')
@@ -50,75 +81,93 @@ class PassGenerator:
         y += 25
         draw.text((20, y), f"Expiry Date: {user_pass.expiry_date.strftime('%Y-%m-%d')}", fill='black', font=self.font)
 
-        # Add verification line with grid pattern
-        line_y = self.height - 40  # Move up to accommodate grid
-        start_x = (self.width - (self.colorless_width + self.line_spacing + self.colored_width) * self.grid_size) // 2
+        # Generate verification codes
+        if user_pass.nation_id:
+            nation_code = self._generate_entity_code("nation", user_pass.nation_id)
+            colorless = nation_code
+            if not user_pass.faction_id:
+                # Add checker pattern with white trim if needed
+                if any(int(nation_code[-1], 16) > 7):
+                    colorless = nation_code[:-1] + "0"  # White trim at end
+                if any(int(nation_code[0], 16) > 7):
+                    colorless = "0" + nation_code[1:]  # White trim at start
+        else:
+            colorless = self.default_pattern
 
-        # Draw colorless part - treat as one continuous line split into 6 rows
-        colorless = user_pass.pass_identifier.colorless_part
-        for y in range(self.colorless_height):
-            for x in range(self.colorless_width):
-                # Calculate position in the continuous line
-                line_pos = y * self.colorless_width + x
-                if line_pos < len(colorless):
-                    color_value = int(colorless[line_pos], 16) * 16
-                    # Fill grid cell
-                    for dx in range(self.grid_size):
-                        for dy in range(self.grid_size):
-                            draw.point(
-                                (start_x + x * self.grid_size + dx, line_y + y * self.grid_size + dy),
-                                fill=(color_value, color_value, color_value)
-                            )
+        if user_pass.faction_id:
+            faction_code = self._generate_entity_code("faction", user_pass.faction_id)
+            colorless = faction_code
+            if user_pass.nation_id:
+                # Combine faction and nation codes
+                for i in range(72):
+                    if i < 36:  # First half faction
+                        colorless = faction_code
+                    else:  # Second half nation
+                        colorless = nation_code
 
-        # Draw colored part - treat as one continuous line split into 6 rows
-        colored = user_pass.pass_identifier.colored_part
+        # Generate colored part (user-specific)
+        colored = self._generate_user_code(user_pass.user_id)
+
+        # Draw verification line
+        line_y = self.height - 40
+        start_x = (self.width - (self.colorless_width * self.grid_size)) // 2
+
+        # Draw colorless grid
+        for i in range(72):
+            x = i % 12
+            y = i // 12
+            color_value = int(colorless[i], 16) * 16
+            for dx in range(self.grid_size):
+                for dy in range(self.grid_size):
+                    draw.point(
+                        (start_x + x * self.grid_size + dx, line_y + y * self.grid_size + dy),
+                        fill=(color_value, color_value, color_value)
+                    )
+
+        # Draw colored grid
         colored_start_x = start_x + (self.colorless_width * self.grid_size) + self.line_spacing
-        for y in range(self.colored_height):
-            for x in range(self.colored_width):
-                # Calculate position in the continuous line
-                line_pos = y * self.colored_width + x
-                if line_pos < len(colored):
-                    color_value = int(colored[line_pos], 16)
-                    color = ((color_value & 4) * 64, (color_value & 2) * 64, (color_value & 1) * 64)
-                    # Fill grid cell
-                    for dx in range(self.grid_size):
-                        for dy in range(self.grid_size):
-                            draw.point(
-                                (colored_start_x + x * self.grid_size + dx, line_y + y * self.grid_size + dy),
-                                fill=color
-                            )
+        for i in range(72):
+            x = i % 12
+            y = i // 12
+            color_value = int(colored[i], 16)
+            r = ((color_value & 0xF0) >> 4) * 16
+            g = (color_value & 0x0F) * 16
+            b = ((i % 3) * 64)  # Add some blue variation
+            for dx in range(self.grid_size):
+                for dy in range(self.grid_size):
+                    draw.point(
+                        (colored_start_x + x * self.grid_size + dx, line_y + y * self.grid_size + dy),
+                        fill=(r, g, b)
+                    )
 
         return img
 
     def extract_verification_line(self, image: Image.Image) -> tuple[str, str]:
         """Extract both parts of the verification line from an image."""
         line_y = self.height - 40
-        start_x = (self.width - (self.colorless_width + self.line_spacing + self.colored_width) * self.grid_size) // 2
+        start_x = (self.width - (self.colorless_width * self.grid_size)) // 2
         
-        # Get the verification line region
         line_data = np.array(image)
-
-        # Extract colorless part - read as continuous line across rows
         colorless_values = []
-        for y in range(self.colorless_height):
-            for x in range(self.colorless_width):
-                # Get center pixel of grid cell
-                sample_x = start_x + x * self.grid_size + self.grid_size // 2
-                sample_y = line_y + y * self.grid_size + self.grid_size // 2
-                value = line_data[sample_y][sample_x][0]  # Get grayscale value
-                colorless_values.append(format(value // 16, 'x'))
-
-        # Extract colored part - read as continuous line across rows
         colored_values = []
-        colored_start_x = start_x + (self.colorless_width * self.grid_size) + self.line_spacing
-        for y in range(self.colored_height):
-            for x in range(self.colored_width):
-                # Get center pixel of grid cell
-                sample_x = colored_start_x + x * self.grid_size + self.grid_size // 2
-                sample_y = line_y + y * self.grid_size + self.grid_size // 2
-                r, g, b = line_data[sample_y][sample_x]
-                color_value = ((r > 32) << 2) | ((g > 32) << 1) | (b > 32)
-                colored_values.append(format(color_value, 'x'))
+
+        # Extract full 72-character strings
+        for i in range(72):
+            x = i % 12
+            y = i // 12
+            
+            # Sample colorless grid
+            sample_x = start_x + x * self.grid_size + self.grid_size // 2
+            sample_y = line_y + y * self.grid_size + self.grid_size // 2
+            value = line_data[sample_y][sample_x][0]
+            colorless_values.append(format(value // 16, 'x'))
+
+            # Sample colored grid
+            colored_start_x = start_x + (self.colorless_width * self.grid_size) + self.line_spacing
+            sample_x = colored_start_x + x * self.grid_size + self.grid_size // 2
+            r, g, b = line_data[sample_y][sample_x]
+            color_value = format(((r // 16) << 4) | (g // 16), 'x')
+            colored_values.append(color_value)
 
         return (''.join(colorless_values), ''.join(colored_values))
 
