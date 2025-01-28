@@ -8,6 +8,18 @@ from datetime import datetime, timedelta
 from pass_generator import PassGenerator
 from typing import Optional
 
+def in_command_channel():
+    """Check if command is used in the correct channel"""
+    async def predicate(interaction: discord.Interaction) -> bool:
+        # Staff and owners can use commands anywhere
+        if interaction.user.guild_permissions.administrator:
+            return True
+
+        # Check if in command channel
+        command_channel_id = bot.command_channels.get(interaction.guild_id)
+        return interaction.channel_id == command_channel_id
+    return app_commands.check(predicate)
+
 class MegatropoBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.all()
@@ -41,7 +53,7 @@ class MegatropoBot(commands.Bot):
 
         # Assign role to bot if not already assigned
         bot_member = guild.get_member(self.user.id)
-        if bot_member and bot_role not in bot_member.roles:
+        if (bot_member and bot_role not in bot_member.roles):
             try:
                 await bot_member.add_roles(bot_role, reason="Bot role assignment")
             except discord.Forbidden:
@@ -100,14 +112,8 @@ class MegatropoBot(commands.Bot):
         self.nation_announcement_channels[guild.id] = nation_announce.id
 
     async def can_use_command(self, interaction: discord.Interaction) -> bool:
-        """Check if the user can use commands in this channel"""
-        # Staff and owners can use commands anywhere
-        if interaction.user.guild_permissions.administrator:
-            return True
-
-        # Check if in command channel
-        command_channel_id = self.command_channels.get(interaction.guild_id)
-        return interaction.channel_id == command_channel_id
+        """Legacy method - kept for reference but not used"""
+        pass
 
     async def create_faction_category(self, guild: discord.Guild, faction: Faction) -> Optional[discord.CategoryChannel]:
         overwrites = {
@@ -169,11 +175,13 @@ async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     
 @bot.tree.command(name="balance", description="Check your balance")
+@in_command_channel()
 async def balance(interaction: discord.Interaction):
     user = await bot.db.get_user(interaction.user.id)
     await interaction.response.send_message(f"Your balance: ${user.balance}")
 
 @bot.tree.command(name="create_faction", description="Create a new faction")
+@in_command_channel()
 async def create_faction(interaction: discord.Interaction, name: str):
     user = await bot.db.get_user(interaction.user.id)
     if user.balance < 500:
@@ -188,6 +196,7 @@ async def create_faction(interaction: discord.Interaction, name: str):
         await interaction.response.send_message("Faction name already exists!")
 
 @bot.tree.command(name="claim_land", description="Request to claim land")
+@in_command_channel()
 async def claim_land(interaction: discord.Interaction, name: str, payment_source: str):
     if not any(role.permissions.administrator for role in interaction.user.roles):
         await interaction.response.send_message("You don't have permission to approve land claims!")
@@ -213,6 +222,7 @@ async def claim_land(interaction: discord.Interaction, name: str, payment_source
             await interaction.response.send_message(f"Faction converted to nation {name} successfully!")
 
 @bot.tree.command(name="create-rank", description="Create a new rank in your faction")
+@in_command_channel()
 async def create_rank(
     interaction: discord.Interaction,
     name: str,
@@ -246,6 +256,7 @@ async def create_rank(
         await interaction.response.send_message("Failed to create rank!")
 
 @bot.tree.command(name="add-member", description="Add a member to your faction")
+@in_command_channel()
 @app_commands.describe(user="Optional: Directly mention a user to invite")
 async def add_member(interaction: discord.Interaction, user: discord.User = None):
     inviter = await bot.db.get_user(interaction.user.id)
@@ -288,6 +299,7 @@ async def add_member(interaction: discord.Interaction, user: discord.User = None
             await interaction.followup.send("Timed out waiting for mentions!")
 
 @bot.tree.command(name="user-info", description="Get information about a user")
+@in_command_channel()
 async def user_info(interaction: discord.Interaction, user: discord.User = None):
     target_user = user or interaction.user
     user_data = await bot.db.get_user(target_user.id)
@@ -301,6 +313,7 @@ async def user_info(interaction: discord.Interaction, user: discord.User = None)
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="faction-info", description="Get information about a faction")
+@in_command_channel()
 async def faction_info(interaction: discord.Interaction, name: str = None):
     if name:
         faction = await bot.db.get_faction_by_name(name)
@@ -332,6 +345,7 @@ async def faction_info(interaction: discord.Interaction, name: str = None):
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="nation-info", description="Get information about a nation")
+@in_command_channel()
 async def nation_info(interaction: discord.Interaction, name: str = None):
     if name:
         nation = await bot.db.get_nation_by_name(name)
@@ -366,6 +380,7 @@ async def nation_info(interaction: discord.Interaction, name: str = None):
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="form-alliance", description="Form an alliance with another nation")
+@in_command_channel()
 async def form_alliance(interaction: discord.Interaction, nation_name: str):
     user = await bot.db.get_user(interaction.user.id)
     if not user.nation_id:
@@ -393,6 +408,7 @@ async def form_alliance(interaction: discord.Interaction, nation_name: str):
         await interaction.response.send_message("Failed to form alliance!")
 
 @bot.tree.command(name="break-alliance", description="Break an alliance with another nation")
+@in_command_channel()
 async def break_alliance(interaction: discord.Interaction, nation_name: str):
     user = await bot.db.get_user(interaction.user.id)
     if not user.nation_id:
@@ -416,6 +432,7 @@ async def break_alliance(interaction: discord.Interaction, nation_name: str):
         await interaction.response.send_message("Failed to break alliance!")
 
 @bot.tree.command(name="transfer", description="Transfer money between faction/nation pools")
+@in_command_channel()
 async def transfer_money(
     interaction: discord.Interaction,
     amount: float,
@@ -468,6 +485,7 @@ async def transfer_money(
         await interaction.response.send_message("Transfer failed! Insufficient funds or invalid transfer.")
 
 @bot.tree.command(name="grant-pass", description="Grant a pass to a user")
+@in_command_channel()
 async def grant_pass(interaction: discord.Interaction, user: discord.User, days: int = 30):
     granter = await bot.db.get_user(interaction.user.id)
     if not granter.nation_id:
@@ -489,6 +507,7 @@ async def grant_pass(interaction: discord.Interaction, user: discord.User, days:
         await interaction.response.send_message("Failed to create pass!")
 
 @bot.tree.command(name="request-pass", description="Request a new pass (costs 5 if no faction/nation)")
+@in_command_channel()
 async def request_pass(interaction: discord.Interaction):
     user = await bot.db.get_user(interaction.user.id)
     
@@ -513,6 +532,7 @@ async def request_pass(interaction: discord.Interaction):
         await interaction.response.send_message("Failed to create pass!")
 
 @bot.tree.command(name="show-pass", description="Show your pass")
+@in_command_channel()
 async def show_pass(interaction: discord.Interaction):
     user = await bot.db.get_user(interaction.user.id)
     user_pass = await bot.db.get_user_pass(user.id)
@@ -531,6 +551,7 @@ async def show_pass(interaction: discord.Interaction):
     os.remove(f"temp_pass_{user.id}.png")
 
 @bot.tree.command(name="upload-faction-icon", description="Upload your faction's icon")
+@in_command_channel()
 async def upload_faction_icon(interaction: discord.Interaction):
     user = await bot.db.get_user(interaction.user.id)
     faction = await bot.db.get_user_faction(user.id)
@@ -564,6 +585,7 @@ async def upload_faction_icon(interaction: discord.Interaction):
         await interaction.followup.send("Timed out waiting for icon upload!")
 
 @bot.tree.command(name="upload-nation-icon", description="Upload your nation's icon")
+@in_command_channel()
 async def upload_nation_icon(interaction: discord.Interaction):
     user = await bot.db.get_user(interaction.user.id)
     nation = await bot.db.get_nation(user.nation_id) if user.nation_id else None
@@ -597,6 +619,7 @@ async def upload_nation_icon(interaction: discord.Interaction):
         await interaction.followup.send("Timed out waiting for icon upload!")
 
 @bot.tree.command(name="verify-pass", description="Verify another user's pass")
+@in_command_channel()
 async def verify_pass(interaction: discord.Interaction, user: discord.User):
     verifier = await bot.db.get_user(interaction.user.id)
     target = await bot.db.get_user(user.id)
@@ -623,6 +646,7 @@ async def verify_pass(interaction: discord.Interaction, user: discord.User):
     )
 
 @bot.tree.command(name="check-pass", description="Check a displayed pass")
+@in_command_channel()
 async def check_pass(interaction: discord.Interaction):
     if not interaction.message.attachments:
         await interaction.response.send_message("No pass image found in the message!")
@@ -659,6 +683,7 @@ async def check_pass(interaction: discord.Interaction):
         os.remove(marked_path)
 
 @bot.tree.command(name="announce", description="Make an announcement")
+@in_command_channel()
 async def announce(
     interaction: discord.Interaction,
     nation: bool,
@@ -709,16 +734,6 @@ async def announce(
         await channel.send(embed=embed)
 
     await interaction.response.send_message("Announcement(s) sent successfully!")
-
-# Modify existing command decorator to include command restriction
-def command_check():
-    async def predicate(interaction: discord.Interaction) -> bool:
-        return await bot.can_use_command(interaction)
-    return app_commands.check(predicate)
-
-# Apply command restriction to all commands
-for command in bot.tree.walk_commands():
-    command.add_check(command_check())
 
 # Get token from environment variable
 TOKEN = os.getenv('DCBOTTOKEN')
