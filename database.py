@@ -3,7 +3,7 @@ import json
 import os
 from datetime import datetime
 from typing import List, Optional
-from models import PassIdentifier, Rank, User, Faction, Nation, UserPass
+from models import FactionPermission, PassIdentifier, Rank, User, Faction, Nation, UserPass
 
 class Database:
     def __init__(self):
