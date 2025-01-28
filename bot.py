@@ -502,6 +502,12 @@ async def create_nation(interaction: discord.Interaction, name: str, type: str, 
     manage_ranks="Permission to manage ranks",
     manage_alliances="Permission to manage alliances"
 )
+@app_commands.choices(
+    entity_type=[
+        app_commands.Choice(name="Faction", value="faction"),
+        app_commands.Choice(name="Nation", value="nation")
+    ]
+)
 async def create_rank(
     interaction: discord.Interaction,
     entity_type: str,
@@ -515,13 +521,13 @@ async def create_rank(
     await interaction.response.defer()  # Defer the interaction at the beginning
     user = await bot.db.get_user(interaction.user.id)
     
-    if entity_type.lower() == "faction":
+    if entity_type == "faction":
         entity = await bot.db.get_user_faction(user.id)
         if not entity:
             await interaction.followup.send("You're not in a faction!")
             return
         user_rank = await bot.db.get_faction_member_rank(entity.id, user.id)
-    elif entity_type.lower() == "nation":
+    elif entity_type == "nation":
         entity = await bot.db.get_nation(user.nation_id)
         if not entity:
             await interaction.followup.send("You're not in a nation!")
@@ -696,26 +702,46 @@ async def disband(interaction: discord.Interaction, entity_type: str):
     except TimeoutError:
         await interaction.followup.send("Disbanding cancelled. Confirmation timed out.")
 
-@bot.tree.command(name="add-member", description="Add a member to your faction")
+@bot.tree.command(name="add-member", description="Add a member to your faction or nation")
 @in_command_channel()
-@app_commands.describe(user="Optional: Directly mention a user to invite")
-async def add_member(interaction: discord.Interaction, user: discord.User = None):
+@app_commands.describe(
+    entity_type="Type of entity: 'faction' or 'nation'",
+    user="Optional: Directly mention a user to invite"
+)
+@app_commands.choices(
+    entity_type=[
+        app_commands.Choice(name="Faction", value="faction"),
+        app_commands.Choice(name="Nation", value="nation")
+    ]
+)
+async def add_member(interaction: discord.Interaction, entity_type: str, user: discord.User = None):
     inviter = await bot.db.get_user(interaction.user.id)
-    faction = await bot.db.get_user_faction(inviter.id)
-    if not faction:
-        await interaction.response.send_message("You're not in a faction!")
+    
+    if entity_type == "faction":
+        entity = await bot.db.get_user_faction(inviter.id)
+        if not entity:
+            await interaction.response.send_message("You're not in a faction!")
+            return
+        rank = await bot.db.get_faction_member_rank(entity.id, inviter.id)
+    elif entity_type == "nation":
+        entity = await bot.db.get_nation(inviter.nation_id)
+        if not entity:
+            await interaction.response.send_message("You're not in a nation!")
+            return
+        rank = await bot.db.get_faction_member_rank(entity.id, inviter.id)
+    else:
+        await interaction.response.send_message("Invalid entity type! Use 'faction' or 'nation'.")
         return
 
-    rank = await bot.db.get_faction_member_rank(faction.id, inviter.id)
     if not rank or FactionPermission.ADD_MEMBERS not in rank.permissions:
         await interaction.response.send_message("You don't have permission to add members!")
         return
 
     if user:
-        success = await bot.db.add_pending_invite(user.id, faction.id)
+        success = await bot.db.add_pending_invite(user.id, entity.id)
         if success:
             await interaction.response.send_message(
-                f"Invited {user.mention} to {faction.name}! They can accept with `/accept-invite {faction.name}`"
+                f"Invited {user.mention} to {entity.name}! They can accept with `/accept-invite {entity_type} {entity.id}`"
             )
     else:
         await interaction.response.send_message("Please mention the users to invite in your next message:")
@@ -731,13 +757,41 @@ async def add_member(interaction: discord.Interaction, user: discord.User = None
                 return
 
             for mentioned_user in mentions:
-                await bot.db.add_pending_invite(mentioned_user.id, faction.id)
+                await bot.db.add_pending_invite(mentioned_user.id, entity.id)
             
             await interaction.followup.send(
-                f"Invited {len(mentions)} users to {faction.name}! They can accept with `/accept-invite {faction.name}`"
+                f"Invited {len(mentions)} users to {entity.name}! They can accept with `/accept-invite {entity_type} {entity.id}`"
             )
         except TimeoutError:
             await interaction.followup.send("Timed out waiting for mentions!")
+
+@bot.tree.command(name="accept-invite", description="Accept an invite to a faction or nation")
+@in_command_channel()
+@app_commands.describe(
+    entity_type="Type of entity: 'faction' or 'nation'",
+    entity_id="ID of the faction or nation"
+)
+@app_commands.choices(
+    entity_type=[
+        app_commands.Choice(name="Faction", value="faction"),
+        app_commands.Choice(name="Nation", value="nation")
+    ]
+)
+async def accept_invite(interaction: discord.Interaction, entity_type: str, entity_id: int):
+    user = await bot.db.get_user(interaction.user.id)
+    
+    if entity_type == "faction":
+        success = await bot.db.accept_faction_invite(user.id, entity_id)
+    elif entity_type == "nation":
+        success = await bot.db.accept_nation_invite(user.id, entity_id)
+    else:
+        await interaction.response.send_message("Invalid entity type! Use 'faction' or 'nation'.")
+        return
+
+    if success:
+        await interaction.response.send_message(f"Successfully joined the {entity_type}!")
+    else:
+        await interaction.response.send_message(f"Failed to join the {entity_type}. Make sure you have a pending invite.")
 
 @bot.tree.command(name="user-info", description="Get information about a user")
 @in_command_channel()

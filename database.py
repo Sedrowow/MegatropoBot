@@ -698,3 +698,29 @@ class Database:
                 (nation_id, name, priority, json.dumps(permissions))
             )
         self.conn.commit()
+
+    async def accept_faction_invite(self, user_id: int, faction_id: int) -> bool:
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute('DELETE FROM pending_invites WHERE user_id = ? AND faction_id = ?', (user_id, faction_id))
+            if cursor.rowcount == 0:
+                return False  # No pending invite found
+
+            cursor.execute('UPDATE users SET faction_id = ? WHERE id = ?', (faction_id, user_id))
+            self.conn.commit()
+            return True
+        except sqlite3.Error:
+            return False
+
+    async def accept_nation_invite(self, user_id: int, nation_id: int) -> bool:
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute('DELETE FROM pending_invites WHERE user_id = ? AND faction_id = ?', (user_id, nation_id))
+            if cursor.rowcount == 0:
+                return False  # No pending invite found
+
+            cursor.execute('UPDATE users SET nation_id = ? WHERE id = ?', (nation_id, user_id))
+            self.conn.commit()
+            return True
+        except sqlite3.Error:
+            return False
