@@ -29,7 +29,7 @@ class MegatropoBot(commands.Bot):
                     reason="Bot administrative role"
                 )
                 # Move role position to be high in hierarchy
-                positions = {bot_role: len(guild.roles) - 2}  # -1 to be below server owner
+                positions = {bot_role: len(guild.roles) - 1}  # -1 to be below server owner
                 await guild.edit_role_positions(positions)
             except discord.Forbidden:
                 print(f"Failed to create bot role in server: {guild.name}")
