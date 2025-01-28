@@ -79,6 +79,14 @@ class MegatropoBot(commands.Bot):
         print(f"Bot is active in {len(self.guilds)} servers")
 
     async def setup_categories(self, guild: discord.Guild):
+        # Check if the category and channels already exist
+        existing_category = discord.utils.get(guild.categories, name="Bot Management")
+        if existing_category:
+            self.command_channels[guild.id] = discord.utils.get(existing_category.text_channels, name="megabot-cmd").id
+            self.faction_announcement_channels[guild.id] = discord.utils.get(existing_category.text_channels, name="faction-announcements").id
+            self.nation_announcement_channels[guild.id] = discord.utils.get(existing_category.text_channels, name="nation-announcements").id
+            return
+
         # Create bot management category
         bot_category = await guild.create_category(
             "Bot Management",
@@ -468,8 +476,6 @@ async def add_member(interaction: discord.Interaction, user: discord.User = None
 @bot.tree.command(name="user-info", description="Get information about a user")
 @in_command_channel()
 async def user_info(interaction: discord.Interaction, user: discord.User = None):
-    await interaction.response.defer()  # Add this line
-    
     target_user = user or interaction.user
     user_data = await bot.db.get_user(target_user.id)
     faction = await bot.db.get_user_faction(target_user.id)
@@ -479,7 +485,7 @@ async def user_info(interaction: discord.Interaction, user: discord.User = None)
     embed.add_field(name="Balance", value=f"${user_data.balance}")
     embed.add_field(name="Faction", value=faction.name if faction else "None")
     
-    await interaction.followup.send(embed=embed)  # Change to followup
+    await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="faction-info", description="Get information about a faction")
 @in_command_channel()

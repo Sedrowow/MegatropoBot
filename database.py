@@ -558,6 +558,11 @@ class Database:
                 'INSERT INTO factions (name, owner_id) VALUES (?, ?)',
                 (name, owner_id)
             )
+            faction_id = cursor.lastrowid
+            cursor.execute(
+                'UPDATE users SET faction_id = ? WHERE id = ?',
+                (faction_id, owner_id)
+            )
             self.conn.commit()
             return True
         except sqlite3.IntegrityError:
