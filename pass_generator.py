@@ -1,3 +1,4 @@
+import random
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 import numpy as np
 from datetime import datetime
@@ -260,3 +261,23 @@ class PassGenerator:
         except Exception as e:
             discrepancies.append(f"Error processing image: {str(e)}")
             return False, discrepancies, Image.new('RGB', (self.width, self.height), 'white')
+
+    def _generate_default_icon(self, letter: str) -> Image.Image:
+        """Generate a default icon with the given letter and a random color"""
+        size = (50, 50)
+        img = Image.new('RGB', size, color=(255, 255, 255))
+        draw = ImageDraw.Draw(img)
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
+        
+        # Generate random color
+        color = tuple(random.randint(0, 255) for _ in range(3))
+        
+        # Draw circular vignette
+        draw.ellipse([(0, 0), size], fill=color)
+        
+        # Draw the letter
+        text_size = draw.textsize(letter, font=font)
+        text_position = ((size[0] - text_size[0]) // 2, (size[1] - text_size[1]) // 2)
+        draw.text(text_position, letter, fill=(255, 255, 255), font=font)
+        
+        return img

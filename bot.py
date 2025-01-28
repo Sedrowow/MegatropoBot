@@ -723,18 +723,18 @@ async def add_member(interaction: discord.Interaction, entity_type: str, user: d
         if not entity:
             await interaction.followup.send("You're not in a faction!")
             return
-        rank = await bot.db.get_faction_member_rank(entity.id, inviter.id)
+        user_rank = await bot.db.get_faction_member_rank(entity.id, inviter.id)
     elif entity_type == "nation":
         entity = await bot.db.get_nation(inviter.nation_id)
         if not entity:
             await interaction.followup.send("You're not in a nation!")
             return
-        rank = await bot.db.get_faction_member_rank(entity.id, inviter.id)
+        user_rank = await bot.db.get_faction_member_rank(entity.id, inviter.id)
     else:
         await interaction.followup.send("Invalid entity type! Use 'faction' or 'nation'.")
         return
 
-    if not rank or FactionPermission.ADD_MEMBERS not in rank.permissions:
+    if not user_rank or FactionPermission.ADD_MEMBERS not in user_rank.permissions:
         await interaction.followup.send("You don't have permission to add members!")
         return
 
