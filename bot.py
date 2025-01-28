@@ -83,28 +83,34 @@ class MegatropoBot(commands.Bot):
         bot_category = await guild.create_category(
             "Bot Management",
             overwrites={
-                guild.default_role: discord.PermissionOverwrite(read_messages=False),
-                guild.me: discord.PermissionOverwrite(read_messages=True)
+                guild.default_role: discord.PermissionOverwrite(read_messages=True, send_messages=False),
+                guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
             }
         )
         
         # Create command channel
-        cmd_channel = await bot_category.create_text_channel("megabot-cmd")
+        cmd_channel = await bot_category.create_text_channel(
+            "megabot-cmd",
+            overwrites={
+                guild.default_role: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+                guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+            }
+        )
         self.command_channels[guild.id] = cmd_channel.id
 
         # Create announcement channels
         faction_announce = await bot_category.create_text_channel(
             "faction-announcements",
             overwrites={
-                guild.default_role: discord.PermissionOverwrite(send_messages=False),
-                guild.me: discord.PermissionOverwrite(send_messages=True)
+                guild.default_role: discord.PermissionOverwrite(read_messages=True, send_messages=False, add_reactions=True),
+                guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
             }
         )
         nation_announce = await bot_category.create_text_channel(
             "nation-announcements",
             overwrites={
-                guild.default_role: discord.PermissionOverwrite(send_messages=False),
-                guild.me: discord.PermissionOverwrite(send_messages=True)
+                guild.default_role: discord.PermissionOverwrite(read_messages=True, send_messages=False, add_reactions=True),
+                guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
             }
         )
         
