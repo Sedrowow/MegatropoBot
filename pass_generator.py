@@ -10,6 +10,11 @@ class PassGenerator:
         self.width = 400
         self.height = 250
         self.verification_height = 20
+        self.colorless_width = 12
+        self.colorless_height = 6
+        self.colored_width = 12
+        self.colored_height = 6
+        self.line_spacing = 2  # Space between colorless and colored parts
 
     def create_pass_image(self, user_pass: UserPass, username: str) -> Image.Image:
         img = Image.new('RGB', (self.width, self.height), 'white')
@@ -44,46 +49,51 @@ class PassGenerator:
         y += 25
         draw.text((20, y), f"Expiry Date: {user_pass.expiry_date.strftime('%Y-%m-%d')}", fill='black', font=self.font)
 
-        # Add verification line
-        line_y = self.height - 20
-        line_width = self.width - 40
-        mid_point = line_width // 2
+        # Add verification line - now using pixel blocks instead of single pixels
+        line_y = self.height - 30  # Move up slightly to accommodate larger height
+        start_x = (self.width - (self.colorless_width + self.line_spacing + self.colored_width)) // 2
 
         # Draw colorless part
-        for x in range(20, 20 + mid_point):
-            color_value = int(user_pass.pass_identifier.colorless_part[((x-20) * 6) // mid_point], 16) * 16
-            draw.point((x, line_y), fill=(color_value, color_value, color_value))
+        colorless = user_pass.pass_identifier.colorless_part
+        for x in range(self.colorless_width):
+            for y in range(self.colorless_height):
+                color_value = int(colorless[x * len(colorless) // self.colorless_width], 16) * 16
+                draw.point((start_x + x, line_y + y), fill=(color_value, color_value, color_value))
 
         # Draw colored part
         colored = user_pass.pass_identifier.colored_part
-        for x in range(20 + mid_point, self.width - 20):
-            pos = ((x - (20 + mid_point)) * 6) // mid_point
-            if pos < len(colored):
-                color_value = int(colored[pos], 16)
-                color = ((color_value & 4) * 64, (color_value & 2) * 64, (color_value & 1) * 64)
-                draw.point((x, line_y), fill=color)
+        colored_start_x = start_x + self.colorless_width + self.line_spacing
+        for x in range(self.colored_width):
+            for y in range(self.colored_height):
+                pos = x * len(colored) // self.colored_width
+                if pos < len(colored):
+                    color_value = int(colored[pos], 16)
+                    color = ((color_value & 4) * 64, (color_value & 2) * 64, (color_value & 1) * 64)
+                    draw.point((colored_start_x + x, line_y + y), fill=color)
 
         return img
 
     def extract_verification_line(self, image: Image.Image) -> tuple[str, str]:
         """Extract both parts of the verification line from an image."""
-        line_y = self.height - 20
-        line = np.array(image.getdata()).reshape(self.height, self.width, 3)
-        line = line[line_y]
+        line_y = self.height - 30
+        start_x = (self.width - (self.colorless_width + self.line_spacing + self.colored_width)) // 2
+        
+        # Get the verification line region
+        line_data = np.array(image)
 
-        # Extract colorless part
-        mid_point = (self.width - 40) // 2
+        # Extract colorless part - sample center pixel of each column
         colorless_values = []
-        for x in range(20, 20 + mid_point):
-            # Convert grayscale value back to hex
-            value = format(line[x][0] // 16, 'x')
-            colorless_values.append(value)
+        for x in range(self.colorless_width):
+            mid_y = line_y + (self.colorless_height // 2)
+            value = line_data[mid_y][start_x + x][0]  # Get grayscale value
+            colorless_values.append(format(value // 16, 'x'))
 
-        # Extract colored part
+        # Extract colored part - sample center pixel of each column
         colored_values = []
-        for x in range(20 + mid_point, self.width - 20):
-            r, g, b = line[x]
-            # Convert RGB values back to our 4-value encoding
+        colored_start_x = start_x + self.colorless_width + self.line_spacing
+        for x in range(self.colored_width):
+            mid_y = line_y + (self.colored_height // 2)
+            r, g, b = line_data[mid_y][colored_start_x + x]
             color_value = ((r > 32) << 2) | ((g > 32) << 1) | (b > 32)
             colored_values.append(format(color_value, 'x'))
 
