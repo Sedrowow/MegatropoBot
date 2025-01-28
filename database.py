@@ -560,6 +560,7 @@ class Database:
                 (name, owner_id)
             )
             faction_id = cursor.lastrowid
+            await self.create_default_ranks_for_faction(faction_id)
             cursor.execute(
                 'UPDATE users SET faction_id = ?, rank_id = (SELECT id FROM ranks WHERE faction_id = ? AND name = "Owner") WHERE id = ?',
                 (faction_id, faction_id, owner_id)
@@ -577,6 +578,7 @@ class Database:
                 (name, owner_id)
             )
             nation_id = cursor.lastrowid
+            await self.create_default_ranks_for_nation(nation_id)
             cursor.execute(
                 'UPDATE users SET nation_id = ?, rank_id = (SELECT id FROM ranks WHERE faction_id = ? AND name = "Owner") WHERE id = ?',
                 (nation_id, nation_id, owner_id)
