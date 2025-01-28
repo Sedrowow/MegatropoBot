@@ -555,25 +555,41 @@ class Database:
     async def create_faction(self, name: str, owner_id: int) -> bool:
         cursor = self.conn.cursor()
         try:
+            # Start a transaction
+            cursor.execute('BEGIN TRANSACTION')
+
+            # Create the faction
             cursor.execute(
                 'INSERT INTO factions (name, owner_id) VALUES (?, ?)',
                 (name, owner_id)
             )
             faction_id = cursor.lastrowid
+
+            # Create default ranks
             await self.create_default_ranks_for_faction(faction_id)
-            
-            # First get the owner rank_id
-            cursor.execute('SELECT id FROM ranks WHERE faction_id = ? AND name = "Owner"', (faction_id,))
-            owner_rank_id = cursor.fetchone()[0]
-            
-            # Then update the user with both faction_id and rank_id
+
+            # Get the owner rank ID (must be after creating default ranks)
+            cursor.execute(
+                'SELECT id FROM ranks WHERE faction_id = ? AND name = ?', 
+                (faction_id, "Owner")
+            )
+            owner_rank = cursor.fetchone()
+            if not owner_rank:
+                cursor.execute('ROLLBACK')
+                return False
+
+            # Update the user with faction_id and rank_id
             cursor.execute(
                 'UPDATE users SET faction_id = ?, rank_id = ? WHERE id = ?',
-                (faction_id, owner_rank_id, owner_id)
+                (faction_id, owner_rank[0], owner_id)
             )
-            self.conn.commit()
+
+            # Commit the transaction
+            cursor.execute('COMMIT')
             return True
-        except sqlite3.IntegrityError:
+
+        except sqlite3.Error:
+            cursor.execute('ROLLBACK')
             return False
 
     async def create_nation(self, name: str, owner_id: int) -> bool:
