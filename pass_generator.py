@@ -187,37 +187,67 @@ class PassGenerator:
                 discrepancies.append("Invalid image dimensions")
                 return False, discrepancies, image
 
-            # Extract and verify the verification line
+            # Extract and verify both parts
             extracted_colorless, extracted_colored = self.extract_verification_line(image)
             
             # Normalize expected values
-            expected_colorless = user_pass.pass_identifier.colorless_part or '0' * 72
-            expected_colored = user_pass.pass_identifier.colored_part.ljust(72, '0')
+            expected_colorless = user_pass.pass_identifier.colorless_part[:72].ljust(72, '0')
+            expected_colored = user_pass.pass_identifier.colored_part[:72].ljust(72, '0')
+
+            # Create a transparent overlay for marking errors
+            marked_image = image.copy()
+            overlay = Image.new('RGBA', image.size, (0, 0, 0, 0))
+            draw = ImageDraw.Draw(overlay)
+
+            # Mark specific regions if they're invalid
+            line_y = self.height - 40
+            start_x = (self.width - (self.colorless_width * self.grid_size)) // 2
 
             if extracted_colorless != expected_colorless:
                 discrepancies.append("Invalid faction/nation identifier")
-                print(f"Expected colorless: {expected_colorless}")
-                print(f"Extracted colorless: {extracted_colorless}")
+                # Mark colorless region with red overlay
+                draw.rectangle(
+                    [
+                        (start_x, line_y),
+                        (start_x + self.colorless_width * self.grid_size, line_y + self.colorless_height * self.grid_size)
+                    ],
+                    fill=(255, 0, 0, 64),  # Semi-transparent red
+                    outline=(255, 0, 0, 255)  # Solid red outline
+                )
 
             if extracted_colored != expected_colored:
                 discrepancies.append("Invalid user identifier")
-                print(f"Expected colored: {expected_colored}")
-                print(f"Extracted colored: {extracted_colored}")
+                # Mark colored region with red overlay
+                colored_start_x = start_x + (self.colorless_width * self.grid_size) + self.line_spacing
+                draw.rectangle(
+                    [
+                        (colored_start_x, line_y),
+                        (colored_start_x + self.colored_width * self.grid_size, line_y + self.colored_height * self.grid_size)
+                    ],
+                    fill=(255, 0, 0, 64),  # Semi-transparent red
+                    outline=(255, 0, 0, 255)  # Solid red outline
+                )
 
-            # Create a copy for marking discrepancies
-            marked_image = image.copy()
-            draw = ImageDraw.Draw(marked_image)
-
-            # Check expiry date
             if datetime.now() > user_pass.expiry_date:
                 discrepancies.append("Pass expired")
-                draw.text((20, 40), "EXPIRED", fill='red', font=self.font)
+                # Add red border around the entire pass
+                draw.rectangle(
+                    [(0, 0), (self.width-1, self.height-1)],
+                    outline=(255, 0, 0, 255),
+                    width=3
+                )
 
-            # If there are discrepancies, mark them on the image
+            # Paste the overlay onto the original image
+            marked_image.paste(overlay, (0, 0), overlay)
+
             if discrepancies:
-                for i, disc in enumerate(discrepancies):
-                    draw.text((20, 140 + i*20), disc, fill='red', font=self.font)
-                draw.rectangle([(0, 0), (self.width-1, self.height-1)], outline='red', width=3)
+                print("\nVerification details:")
+                if extracted_colorless != expected_colorless:
+                    print(f"Expected colorless: {expected_colorless}")
+                    print(f"Extracted colorless: {extracted_colorless}")
+                if extracted_colored != expected_colored:
+                    print(f"Expected colored: {expected_colored}")
+                    print(f"Extracted colored: {extracted_colored}")
 
             return len(discrepancies) == 0, discrepancies, marked_image
 

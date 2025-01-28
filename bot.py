@@ -764,26 +764,25 @@ async def upload_nation_icon(interaction: discord.Interaction):
 @bot.tree.command(name="verify-pass", description="Verify another user's pass")
 @in_command_channel()
 async def verify_pass(interaction: discord.Interaction, user: discord.User):
+    await interaction.response.defer()  # Add this to prevent timeout
+    
     verifier = await bot.db.get_user(interaction.user.id)
     target = await bot.db.get_user(user.id)
     
-    # Check if verifier has permission (faction/nation leader or assigned role)
     if not (verifier.faction_id or verifier.nation_id):
-        await interaction.response.send_message("You must be part of a faction or nation to verify passes!")
+        await interaction.followup.send("You must be part of a faction or nation to verify passes!")
         return
 
-    # For users not in any faction/nation, allow direct verification
     if not (target.faction_id or target.nation_id):
         user_pass = await bot.db.get_user_pass(user.id)
         if not user_pass:
-            await interaction.response.send_message("User has no valid pass!")
+            await interaction.followup.send("User has no valid pass!")
             return
             
-        await interaction.response.send_message(f"Requesting pass from {user.mention}. They should use /show-pass to display it.")
+        await interaction.followup.send(f"Requesting pass from {user.mention}. They should use /show-pass to display it.")
         return
 
-    # For users in factions/nations, require pass display
-    await interaction.response.send_message(
+    await interaction.followup.send(
         f"Requesting pass from {user.mention}. They should use /show-pass to display it.\n"
         "Once they show their pass, use /check-pass to verify it."
     )
