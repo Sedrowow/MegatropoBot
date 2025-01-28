@@ -352,20 +352,18 @@ class Database:
         # Get or create identifier
         colorless_part = await self.get_pass_identifier(user.faction_id, user.nation_id)
         if not colorless_part:
-            # Generate new colorless part
+            # Generate new colorless part with fixed length
             import random
-            colorless_part = format(random.getrandbits(72), '018x')  # 72 bits = 18 hex chars
-            cursor = self.conn.cursor()
-            cursor.execute(
-                'INSERT INTO pass_identifiers (faction_id, nation_id, colorless_part) VALUES (?, ?, ?)',
-                (user.faction_id, user.nation_id, colorless_part)
-            )
-            self.conn.commit()
+            colorless_part = '0' * 72  # Default to all zeros
+            if user.faction_id or user.nation_id:
+                random_part = ''.join(format(random.randint(0, 15), 'x') for _ in range(24))
+                colorless_part = random_part + '0' * 48  # Pad with zeros
 
-        # Generate colored part for user
+        # Generate colored part for user with fixed length
         import hashlib
         hash_input = f"user_{user_id}_{datetime.now().strftime('%Y%m')}"
-        colored_part = hashlib.sha256(hash_input.encode()).hexdigest()[:72]
+        hash_hex = hashlib.sha256(hash_input.encode()).hexdigest()
+        colored_part = hash_hex[:72].ljust(72, '0')  # Ensure exactly 72 chars
         
         cursor = self.conn.cursor()
         cursor.execute('''

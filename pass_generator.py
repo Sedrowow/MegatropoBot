@@ -112,24 +112,15 @@ class PassGenerator:
         line_y = self.height - 40
         start_x = (self.width - (self.colorless_width * self.grid_size)) // 2
 
-        # Ensure colorless pattern is at least 72 characters
-        colorless = user_pass.pass_identifier.colorless_part
-        if not colorless or len(colorless) < 72:
-            colorless = colorless.ljust(72, '0') if colorless else '0' * 72
-
-        # Ensure colored pattern is at least 72 characters
-        colored = user_pass.pass_identifier.colored_part
-        if not colored or len(colored) < 72:
-            colored = colored.ljust(72, '0') if colored else '0' * 72
+        # Ensure patterns are exactly 72 characters
+        colorless = user_pass.pass_identifier.colorless_part[:72].ljust(72, '0')
+        colored = user_pass.pass_identifier.colored_part[:72].ljust(72, '0')
 
         # Draw colorless part
         for i in range(72):
             x = i % 12
             y = i // 12
-            try:
-                color_value = int(colorless[i], 16) * 16
-            except (ValueError, IndexError):
-                color_value = 0
+            color_value = int(colorless[i], 16) * 16
             
             for dx in range(self.grid_size):
                 for dy in range(self.grid_size):
@@ -143,14 +134,11 @@ class PassGenerator:
         for i in range(72):
             x = i % 12
             y = i // 12
-            try:
-                color_val = int(colored[i], 16)
-                r = ((color_val & 0xF0) >> 4) * 16
-                g = (color_val & 0x0F) * 16
-                b = 0  # Keep blue at 0 for consistent verification
-            except (ValueError, IndexError):
-                r, g, b = 0, 0, 0
-
+            color_val = int(colored[i], 16)
+            r = (color_val & 0xF) * 16
+            g = (color_val & 0xF) * 16
+            b = 0  # Keep blue at 0 for consistent verification
+            
             for dx in range(self.grid_size):
                 for dy in range(self.grid_size):
                     draw.point(
@@ -169,7 +157,7 @@ class PassGenerator:
         colorless_values = []
         colored_values = []
 
-        # Extract patterns for both parts
+        # Extract both parts
         for i in range(72):
             x = i % 12
             y = i // 12
@@ -184,9 +172,8 @@ class PassGenerator:
             colored_start_x = start_x + (self.colorless_width * self.grid_size) + self.line_spacing
             sample_x = colored_start_x + x * self.grid_size + self.grid_size // 2
             r, g, _ = line_data[sample_y][sample_x]
-            # Convert RGB back to hex value
-            color_val = ((r // 16) << 4) | (g // 16)
-            colored_values.append(format(color_val, '02x'))
+            color_val = (r // 16) & 0xF  # Only use red channel
+            colored_values.append(format(color_val, 'x'))
 
         return (''.join(colorless_values), ''.join(colored_values))
 
