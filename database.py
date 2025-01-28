@@ -668,3 +668,33 @@ class Database:
             return True
         except sqlite3.Error:
             return False
+
+    async def create_default_ranks_for_faction(self, faction_id: int):
+        cursor = self.conn.cursor()
+        default_ranks = [
+            ("Owner", 0, [FactionPermission.MANAGE_MONEY.name, FactionPermission.ADD_MEMBERS.name, FactionPermission.MANAGE_RANKS.name, FactionPermission.MANAGE_ALLIANCES.name, FactionPermission.MANAGE_ANNOUNCEMENTS.name]),
+            ("Leader", 1, [FactionPermission.MANAGE_MONEY.name, FactionPermission.ADD_MEMBERS.name, FactionPermission.MANAGE_RANKS.name, FactionPermission.MANAGE_ALLIANCES.name]),
+            ("Chief", 2, [FactionPermission.ADD_MEMBERS.name, FactionPermission.MANAGE_RANKS.name]),
+            ("Member", 3, [])
+        ]
+        for name, priority, permissions in default_ranks:
+            cursor.execute(
+                'INSERT INTO ranks (faction_id, name, priority, permissions) VALUES (?, ?, ?, ?)',
+                (faction_id, name, priority, json.dumps(permissions))
+            )
+        self.conn.commit()
+
+    async def create_default_ranks_for_nation(self, nation_id: int):
+        cursor = self.conn.cursor()
+        default_ranks = [
+            ("Owner", 0, [FactionPermission.MANAGE_MONEY.name, FactionPermission.ADD_MEMBERS.name, FactionPermission.MANAGE_RANKS.name, FactionPermission.MANAGE_ALLIANCES.name, FactionPermission.MANAGE_ANNOUNCEMENTS.name]),
+            ("Leader", 1, [FactionPermission.MANAGE_MONEY.name, FactionPermission.ADD_MEMBERS.name, FactionPermission.MANAGE_RANKS.name, FactionPermission.MANAGE_ALLIANCES.name]),
+            ("Chief", 2, [FactionPermission.ADD_MEMBERS.name, FactionPermission.MANAGE_RANKS.name]),
+            ("Member", 3, [])
+        ]
+        for name, priority, permissions in default_ranks:
+            cursor.execute(
+                'INSERT INTO ranks (faction_id, name, priority, permissions) VALUES (?, ?, ?, ?)',
+                (nation_id, name, priority, json.dumps(permissions))
+            )
+        self.conn.commit()
