@@ -378,9 +378,9 @@ async def create_faction(interaction: discord.Interaction, name: str):
     else:
         await interaction.response.send_message("Faction name already exists!")
 
-@bot.tree.command(name="claim_land", description="Request to claim land")
+@bot.tree.command(name="claim_land_request", description="Request to claim land")
 @in_command_channel()
-async def claim_land(interaction: discord.Interaction, name: str, payment_source: str):
+async def claim_land_request(interaction: discord.Interaction, name: str, payment_source: str):
     if not any(role.permissions.administrator for role in interaction.user.roles):
         await interaction.response.send_message("You don't have permission to approve land claims!")
         return
@@ -403,6 +403,54 @@ async def claim_land(interaction: discord.Interaction, name: str, payment_source
         if success:
             await bot.db.modify_faction_balance(faction.id, -1000)
             await interaction.response.send_message(f"Faction converted to nation {name} successfully!")
+
+@bot.tree.command(name="create_nation", description="Create a new nation")
+@in_command_channel()
+@app_commands.describe(
+    name="Name of the new nation",
+    type="Type of creation: 'factionconvert' or 'new'",
+    payment_source="Payment source: 'personal' or 'faction' (only for 'new' type)"
+)
+async def create_nation(interaction: discord.Interaction, name: str, type: str, payment_source: Optional[str] = None):
+    user = await bot.db.get_user(interaction.user.id)
+    
+    if type.lower() == "factionconvert":
+        faction = await bot.db.get_user_faction(user.id)
+        if not faction or faction.balance < 1000:
+            await interaction.response.send_message("Your faction needs $1000 to convert to a nation!")
+            return
+        success = await bot.db.convert_faction_to_nation(faction.id, name)
+        if success:
+            await bot.db.modify_faction_balance(faction.id, -1000)
+            await interaction.response.send_message(f"Faction converted to nation {name} successfully!")
+        else:
+            await interaction.response.send_message("Failed to convert faction to nation!")
+    elif type.lower() == "new":
+        if payment_source.lower() == "personal":
+            if user.balance < 1000:
+                await interaction.response.send_message("You need $1000 to create a nation!")
+                return
+            success = await bot.db.create_nation(name, user.id)
+            if success:
+                await bot.db.modify_balance(user.id, -1000)
+                await interaction.response.send_message(f"Nation {name} created successfully!")
+            else:
+                await interaction.response.send_message("Failed to create nation!")
+        elif payment_source.lower() == "faction":
+            faction = await bot.db.get_user_faction(user.id)
+            if not faction or faction.balance < 1000:
+                await interaction.response.send_message("Your faction needs $1000 to create a nation!")
+                return
+            success = await bot.db.create_nation(name, user.id)
+            if success:
+                await bot.db.modify_faction_balance(faction.id, -1000)
+                await interaction.response.send_message(f"Nation {name} created successfully!")
+            else:
+                await interaction.response.send_message("Failed to create nation!")
+        else:
+            await interaction.response.send_message("Invalid payment source! Use 'personal' or 'faction'.")
+    else:
+        await interaction.response.send_message("Invalid type! Use 'factionconvert' or 'new'.")
 
 @bot.tree.command(name="create-rank", description="Create a new rank in your faction")
 @in_command_channel()
@@ -484,7 +532,7 @@ async def add_member(interaction: discord.Interaction, user: discord.User = None
 @bot.tree.command(name="user-info", description="Get information about a user")
 @in_command_channel()
 async def user_info(interaction: discord.Interaction, user: discord.User = None):
-    await interaction.response.defer()  # Add this line to prevent timeout
+    await interaction.response.defer()  # Defer the interaction at the beginning
     target_user = user or interaction.user
     user_data = await bot.db.get_user(target_user.id)
     faction = await bot.db.get_user_faction(target_user.id)

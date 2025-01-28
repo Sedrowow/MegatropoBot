@@ -568,3 +568,41 @@ class Database:
             return True
         except sqlite3.IntegrityError:
             return False
+
+    async def create_nation(self, name: str, owner_id: int) -> bool:
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute(
+                'INSERT INTO nations (name, owner_id) VALUES (?, ?)',
+                (name, owner_id)
+            )
+            nation_id = cursor.lastrowid
+            cursor.execute(
+                'UPDATE users SET nation_id = ? WHERE id = ?',
+                (nation_id, owner_id)
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    async def convert_faction_to_nation(self, faction_id: int, name: str) -> bool:
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute(
+                'INSERT INTO nations (name, owner_id) SELECT name, owner_id FROM factions WHERE id = ?',
+                (faction_id,)
+            )
+            nation_id = cursor.lastrowid
+            cursor.execute(
+                'UPDATE factions SET nation_id = ? WHERE id = ?',
+                (nation_id, faction_id)
+            )
+            cursor.execute(
+                'UPDATE users SET nation_id = ? WHERE faction_id = ?',
+                (nation_id, faction_id)
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
