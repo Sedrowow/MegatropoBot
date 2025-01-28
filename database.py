@@ -597,18 +597,25 @@ class Database:
     async def convert_faction_to_nation(self, faction_id: int, name: str) -> bool:
         cursor = self.conn.cursor()
         try:
+            cursor.execute('SELECT owner_id FROM factions WHERE id = ?', (faction_id,))
+            owner_row = cursor.fetchone()
+            if not owner_row:
+                return False
+            
             cursor.execute(
-                'INSERT INTO nations (name, owner_id) SELECT name, owner_id FROM factions WHERE id = ?',
-                (faction_id,)
+                'INSERT INTO nations (name, owner_id) VALUES (?, ?)',
+                (name, owner_row[0])
             )
             nation_id = cursor.lastrowid
+            await self.create_default_ranks_for_nation(nation_id)
+            
             cursor.execute(
                 'UPDATE factions SET nation_id = ? WHERE id = ?',
                 (nation_id, faction_id)
             )
             cursor.execute(
-                'UPDATE users SET nation_id = ?, rank_id = (SELECT id FROM ranks WHERE faction_id = ? AND name = "Owner") WHERE faction_id = ?',
-                (nation_id, nation_id, faction_id)
+                'UPDATE users SET nation_id = ? WHERE faction_id = ?',
+                (nation_id, faction_id)
             )
             self.conn.commit()
             return True
