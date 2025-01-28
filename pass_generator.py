@@ -54,37 +54,39 @@ class PassGenerator:
         line_y = self.height - 40  # Move up to accommodate grid
         start_x = (self.width - (self.colorless_width + self.line_spacing + self.colored_width) * self.grid_size) // 2
 
-        # Draw colorless part in 12x6 grid
+        # Draw colorless part - treat as one continuous line split into 6 rows
         colorless = user_pass.pass_identifier.colorless_part
-        for x in range(self.colorless_width):
-            for y in range(self.colorless_height):
-                # Calculate color value based on position in grid
-                grid_pos = (y * self.colorless_width + x) % len(colorless)
-                color_value = int(colorless[grid_pos], 16) * 16
-                # Fill grid cell
-                for dx in range(self.grid_size):
-                    for dy in range(self.grid_size):
-                        draw.point(
-                            (start_x + x * self.grid_size + dx, line_y + y * self.grid_size + dy),
-                            fill=(color_value, color_value, color_value)
-                        )
+        for y in range(self.colorless_height):
+            for x in range(self.colorless_width):
+                # Calculate position in the continuous line
+                line_pos = y * self.colorless_width + x
+                if line_pos < len(colorless):
+                    color_value = int(colorless[line_pos], 16) * 16
+                    # Fill grid cell
+                    for dx in range(self.grid_size):
+                        for dy in range(self.grid_size):
+                            draw.point(
+                                (start_x + x * self.grid_size + dx, line_y + y * self.grid_size + dy),
+                                fill=(color_value, color_value, color_value)
+                            )
 
-        # Draw colored part in 12x6 grid
+        # Draw colored part - treat as one continuous line split into 6 rows
         colored = user_pass.pass_identifier.colored_part
         colored_start_x = start_x + (self.colorless_width * self.grid_size) + self.line_spacing
-        for x in range(self.colored_width):
-            for y in range(self.colored_height):
-                # Calculate color value based on position in grid
-                grid_pos = (y * self.colored_width + x) % len(colored)
-                color_value = int(colored[grid_pos], 16)
-                color = ((color_value & 4) * 64, (color_value & 2) * 64, (color_value & 1) * 64)
-                # Fill grid cell
-                for dx in range(self.grid_size):
-                    for dy in range(self.grid_size):
-                        draw.point(
-                            (colored_start_x + x * self.grid_size + dx, line_y + y * self.grid_size + dy),
-                            fill=color
-                        )
+        for y in range(self.colored_height):
+            for x in range(self.colored_width):
+                # Calculate position in the continuous line
+                line_pos = y * self.colored_width + x
+                if line_pos < len(colored):
+                    color_value = int(colored[line_pos], 16)
+                    color = ((color_value & 4) * 64, (color_value & 2) * 64, (color_value & 1) * 64)
+                    # Fill grid cell
+                    for dx in range(self.grid_size):
+                        for dy in range(self.grid_size):
+                            draw.point(
+                                (colored_start_x + x * self.grid_size + dx, line_y + y * self.grid_size + dy),
+                                fill=color
+                            )
 
         return img
 
@@ -96,7 +98,7 @@ class PassGenerator:
         # Get the verification line region
         line_data = np.array(image)
 
-        # Extract colorless part - sample center of each grid cell
+        # Extract colorless part - read as continuous line across rows
         colorless_values = []
         for y in range(self.colorless_height):
             for x in range(self.colorless_width):
@@ -106,7 +108,7 @@ class PassGenerator:
                 value = line_data[sample_y][sample_x][0]  # Get grayscale value
                 colorless_values.append(format(value // 16, 'x'))
 
-        # Extract colored part - sample center of each grid cell
+        # Extract colored part - read as continuous line across rows
         colored_values = []
         colored_start_x = start_x + (self.colorless_width * self.grid_size) + self.line_spacing
         for y in range(self.colored_height):
@@ -118,7 +120,7 @@ class PassGenerator:
                 color_value = ((r > 32) << 2) | ((g > 32) << 1) | (b > 32)
                 colored_values.append(format(color_value, 'x'))
 
-        return (''.join(colorless_values[:72]), ''.join(colored_values[:72]))  # 12x6 = 72 pixels total
+        return (''.join(colorless_values), ''.join(colored_values))
 
     def verify_pass_image(self, image_path: str, user_pass: UserPass) -> tuple[bool, list[str], Image.Image]:
         """Verify a pass image and return (is_valid, discrepancies, marked_image)"""
