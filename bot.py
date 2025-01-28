@@ -10,7 +10,7 @@ from pass_generator import PassGenerator
 class MegatropoBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.all()
-        intents.all = True  # Enable all intents
+        intents.all
         super().__init__(command_prefix="!", intents=intents)
         self.db = Database()
 
