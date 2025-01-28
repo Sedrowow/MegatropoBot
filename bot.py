@@ -647,24 +647,26 @@ async def verify_pass(interaction: discord.Interaction, user: discord.User):
 
 @bot.tree.command(name="check-pass", description="Check a displayed pass")
 @in_command_channel()
-async def check_pass(interaction: discord.Interaction):
-    if not interaction.message.attachments:
-        await interaction.response.send_message("No pass image found in the message!")
-        return
-
-    # Download and verify the pass image
-    attachment = interaction.message.attachments[0]
-    if not attachment.filename.lower().endswith('.png'):
-        await interaction.response.send_message("Invalid image format!")
+@app_commands.describe(
+    pass_file="The pass image file to verify",
+    user="The user whose pass to verify"
+)
+async def check_pass(
+    interaction: discord.Interaction, 
+    pass_file: discord.Attachment,
+    user: discord.User
+):
+    if not pass_file.filename.lower().endswith('.png'):
+        await interaction.response.send_message("Invalid file format! Please upload a PNG image.")
         return
 
     # Save temporarily and verify
     temp_path = f"temp_verify_{interaction.id}.png"
-    await attachment.save(temp_path)
+    await pass_file.save(temp_path)
     
-    user_pass = await bot.db.get_user_pass(interaction.message.author.id)
+    user_pass = await bot.db.get_user_pass(user.id)
     if not user_pass:
-        await interaction.response.send_message("No pass data found for this user!")
+        await interaction.response.send_message(f"No pass data found for {user.name}!")
         os.remove(temp_path)
         return
 
@@ -672,12 +674,13 @@ async def check_pass(interaction: discord.Interaction):
     os.remove(temp_path)
 
     if is_valid:
-        await interaction.response.send_message("✅ Pass verification successful!")
+        await interaction.response.send_message(f"✅ Pass verification successful for {user.name}!")
     else:
         marked_path = f"marked_pass_{interaction.id}.png"
         marked_image.save(marked_path)
         await interaction.response.send_message(
-            "❌ Pass verification failed!\nDiscrepancies found:\n" + "\n".join(f"- {d}" for d in discrepancies),
+            f"❌ Pass verification failed for {user.name}!\nDiscrepancies found:\n" + 
+            "\n".join(f"- {d}" for d in discrepancies),
             file=discord.File(marked_path)
         )
         os.remove(marked_path)
