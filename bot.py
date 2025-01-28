@@ -372,6 +372,312 @@ class NationSelectView(discord.ui.View):
         super().__init__()
         self.add_item(NationSelect(nations))
 
+class AdminActionSelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="Add Money", value="addmoney"),
+            discord.SelectOption(label="Remove Money", value="removemoney"),
+            discord.SelectOption(label="Set Money", value="setmoney"),
+            discord.SelectOption(label="Faction Management", value="factionman"),
+            discord.SelectOption(label="Nation Management", value="nationman")
+        ]
+        super().__init__(placeholder="Select an action...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        action = self.values[0]
+        if action in ["addmoney", "removemoney", "setmoney"]:
+            view = MoneyTargetSelectView(action)
+            await interaction.response.send_message("Select the target for the money operation:", view=view, ephemeral=True)
+        elif action == "factionman":
+            view = FactionManagementSelectView()
+            await interaction.response.send_message("Select a faction management action:", view=view, ephemeral=True)
+        elif action == "nationman":
+            view = NationManagementSelectView()
+            await interaction.response.send_message("Select a nation management action:", view=view, ephemeral=True)
+
+class MoneyTargetSelect(discord.ui.Select):
+    def __init__(self, action: str):
+        self.action = action
+        options = [
+            discord.SelectOption(label="User", value="user"),
+            discord.SelectOption(label="Faction", value="faction"),
+            discord.SelectOption(label="Nation", value="nation")
+        ]
+        super().__init__(placeholder="Select the target type...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        target_type = self.values[0]
+        await interaction.response.send_modal(MoneyAmountModal(self.action, target_type))
+
+class MoneyTargetSelectView(discord.ui.View):
+    def __init__(self, action: str):
+        super().__init__()
+        self.add_item(MoneyTargetSelect(action))
+
+class MoneyAmountModal(discord.ui.Modal, title="Enter Amount"):
+    def __init__(self, action: str, target_type: str):
+        super().__init__()
+        self.action = action
+        self.target_type = target_type
+        self.amount = discord.ui.TextInput(label="Amount", style=discord.TextStyle.short)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        amount = float(self.amount.value)
+        if self.target_type == "user":
+            await interaction.response.send_message("Please mention the user:", ephemeral=True)
+            try:
+                message = await bot.wait_for(
+                    'message',
+                    timeout=30.0,
+                    check=lambda m: m.author.id == interaction.user.id and m.channel.id == interaction.channel.id
+                )
+                user = message.mentions[0]
+                if self.action == "addmoney":
+                    await bot.db.modify_balance(user.id, amount)
+                elif self.action == "removemoney":
+                    await bot.db.modify_balance(user.id, -amount)
+                elif self.action == "setmoney":
+                    await bot.db.modify_balance(user.id, -user.balance + amount)
+                await interaction.followup.send(f"Successfully {self.action} for {user.mention} by {amount}!", ephemeral=True)
+            except TimeoutError:
+                await interaction.followup.send("Timed out waiting for user mention!", ephemeral=True)
+        elif self.target_type == "faction":
+            await interaction.response.send_message("Please enter the faction name:", ephemeral=True)
+            try:
+                message = await bot.wait_for(
+                    'message',
+                    timeout=30.0,
+                    check=lambda m: m.author.id == interaction.user.id and m.channel.id == interaction.channel.id
+                )
+                faction = await bot.db.get_faction_by_name(message.content)
+                if faction:
+                    if self.action == "addmoney":
+                        await bot.db.modify_faction_balance(faction.id, amount)
+                    elif self.action == "removemoney":
+                        await bot.db.modify_faction_balance(faction.id, -amount)
+                    elif self.action == "setmoney":
+                        await bot.db.modify_faction_balance(faction.id, -faction.balance + amount)
+                    await interaction.followup.send(f"Successfully {self.action} for faction {faction.name} by {amount}!", ephemeral=True)
+                else:
+                    await interaction.followup.send("Faction not found!", ephemeral=True)
+            except TimeoutError:
+                await interaction.followup.send("Timed out waiting for faction name!", ephemeral=True)
+        elif self.target_type == "nation":
+            await interaction.response.send_message("Please enter the nation name:", ephemeral=True)
+            try:
+                message = await bot.wait_for(
+                    'message',
+                    timeout=30.0,
+                    check=lambda m: m.author.id == interaction.user.id and m.channel.id == interaction.channel.id
+                )
+                nation = await bot.db.get_nation_by_name(message.content)
+                if nation:
+                    if self.action == "addmoney":
+                        await bot.db.modify_nation_balance(nation.id, amount)
+                    elif self.action == "removemoney":
+                        await bot.db.modify_nation_balance(nation.id, -amount)
+                    elif self.action == "setmoney":
+                        await bot.db.modify_nation_balance(nation.id, -nation.balance + amount)
+                    await interaction.followup.send(f"Successfully {self.action} for nation {nation.name} by {amount}!", ephemeral=True)
+                else:
+                    await interaction.followup.send("Nation not found!", ephemeral=True)
+            except TimeoutError:
+                await interaction.followup.send("Timed out waiting for nation name!", ephemeral=True)
+
+class FactionManagementSelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="Assign Ranks", value="assign_ranks"),
+            discord.SelectOption(label="Force Add Members", value="force_add_members"),
+            discord.SelectOption(label="Force Disband Faction", value="force_disband_faction")
+        ]
+        super().__init__(placeholder="Select a faction management action...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        action = self.values[0]
+        if action == "assign_ranks":
+            await interaction.response.send_message("Please enter the faction name:", ephemeral=True)
+            try:
+                message = await bot.wait_for(
+                    'message',
+                    timeout=30.0,
+                    check=lambda m: m.author.id == interaction.user.id and m.channel.id == interaction.channel.id
+                )
+                faction = await bot.db.get_faction_by_name(message.content)
+                if faction:
+                    view = AssignRanksView(faction.id)
+                    await interaction.followup.send("Select a rank to assign:", view=view, ephemeral=True)
+                else:
+                    await interaction.followup.send("Faction not found!", ephemeral=True)
+            except TimeoutError:
+                await interaction.followup.send("Timed out waiting for faction name!", ephemeral=True)
+        elif action == "force_add_members":
+            await interaction.response.send_message("Please enter the faction name:", ephemeral=True)
+            try:
+                message = await bot.wait_for(
+                    'message',
+                    timeout=30.0,
+                    check=lambda m: m.author.id == interaction.user.id and m.channel.id == interaction.channel.id
+                )
+                faction = await bot.db.get_faction_by_name(message.content)
+                if faction:
+                    await interaction.followup.send("Please mention the users to add:", ephemeral=True)
+                    try:
+                        message = await bot.wait_for(
+                            'message',
+                            timeout=30.0,
+                            check=lambda m: m.author.id == interaction.user.id and m.channel.id == interaction.channel.id
+                        )
+                        mentions = message.mentions
+                        if not mentions:
+                            await interaction.followup.send("No users mentioned!", ephemeral=True)
+                            return
+
+                        for mentioned_user in mentions:
+                            await bot.db.add_member_to_faction(mentioned_user.id, faction.id)
+                        
+                        await interaction.followup.send(f"Successfully added {len(mentions)} users to faction {faction.name}!", ephemeral=True)
+                    except TimeoutError:
+                        await interaction.followup.send("Timed out waiting for user mentions!", ephemeral=True)
+                else:
+                    await interaction.followup.send("Faction not found!", ephemeral=True)
+            except TimeoutError:
+                await interaction.followup.send("Timed out waiting for faction name!", ephemeral=True)
+        elif action == "force_disband_faction":
+            await interaction.response.send_message("Please enter the faction name:", ephemeral=True)
+            try:
+                message = await bot.wait_for(
+                    'message',
+                    timeout=30.0,
+                    check=lambda m: m.author.id == interaction.user.id and m.channel.id == interaction.channel.id
+                )
+                faction = await bot.db.get_faction_by_name(message.content)
+                if faction:
+                    await bot.db.disband_faction(faction.id)
+                    await interaction.followup.send(f"Successfully disbanded faction {faction.name}!", ephemeral=True)
+                else:
+                    await interaction.followup.send("Faction not found!", ephemeral=True)
+            except TimeoutError:
+                await interaction.followup.send("Timed out waiting for faction name!", ephemeral=True)
+
+class FactionManagementSelectView(discord.ui.View):
+    def __init__(self):
+        super().__init__()
+        self.add_item(FactionManagementSelect())
+
+class NationManagementSelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="Assign Ranks", value="assign_ranks"),
+            discord.SelectOption(label="Force Add Members", value="force_add_members"),
+            discord.SelectOption(label="Force Disband Nation", value="force_disband_nation")
+        ]
+        super().__init__(placeholder="Select a nation management action...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        action = self.values[0]
+        if action == "assign_ranks":
+            await interaction.response.send_message("Please enter the nation name:", ephemeral=True)
+            try:
+                message = await bot.wait_for(
+                    'message',
+                    timeout=30.0,
+                    check=lambda m: m.author.id == interaction.user.id and m.channel.id == interaction.channel.id
+                )
+                nation = await bot.db.get_nation_by_name(message.content)
+                if nation:
+                    view = AssignRanksView(nation.id)
+                    await interaction.followup.send("Select a rank to assign:", view=view, ephemeral=True)
+                else:
+                    await interaction.followup.send("Nation not found!", ephemeral=True)
+            except TimeoutError:
+                await interaction.followup.send("Timed out waiting for nation name!", ephemeral=True)
+        elif action == "force_add_members":
+            await interaction.response.send_message("Please enter the nation name:", ephemeral=True)
+            try:
+                message = await bot.wait_for(
+                    'message',
+                    timeout=30.0,
+                    check=lambda m: m.author.id == interaction.user.id and m.channel.id == interaction.channel.id
+                )
+                nation = await bot.db.get_nation_by_name(message.content)
+                if nation:
+                    await interaction.followup.send("Please mention the users to add:", ephemeral=True)
+                    try:
+                        message = await bot.wait_for(
+                            'message',
+                            timeout=30.0,
+                            check=lambda m: m.author.id == interaction.user.id and m.channel.id == interaction.channel.id
+                        )
+                        mentions = message.mentions
+                        if not mentions:
+                            await interaction.followup.send("No users mentioned!", ephemeral=True)
+                            return
+
+                        for mentioned_user in mentions:
+                            await bot.db.add_member_to_nation(mentioned_user.id, nation.id)
+                        
+                        await interaction.followup.send(f"Successfully added {len(mentions)} users to nation {nation.name}!", ephemeral=True)
+                    except TimeoutError:
+                        await interaction.followup.send("Timed out waiting for user mentions!", ephemeral=True)
+                else:
+                    await interaction.followup.send("Nation not found!", ephemeral=True)
+            except TimeoutError:
+                await interaction.followup.send("Timed out waiting for nation name!", ephemeral=True)
+        elif action == "force_disband_nation":
+            await interaction.response.send_message("Please enter the nation name:", ephemeral=True)
+            try:
+                message = await bot.wait_for(
+                    'message',
+                    timeout=30.0,
+                    check=lambda m: m.author.id == interaction.user.id and m.channel.id == interaction.channel.id
+                )
+                nation = await bot.db.get_nation_by_name(message.content)
+                if nation:
+                    await bot.db.disband_nation(nation.id)
+                    await interaction.followup.send(f"Successfully disbanded nation {nation.name}!", ephemeral=True)
+                else:
+                    await interaction.followup.send("Nation not found!", ephemeral=True)
+            except TimeoutError:
+                await interaction.followup.send("Timed out waiting for nation name!", ephemeral=True)
+
+class NationManagementSelectView(discord.ui.View):
+    def __init__(self):
+        super().__init__()
+        self.add_item(NationManagementSelect())
+
+class AssignRanksView(discord.ui.View):
+    def __init__(self, entity_id: int):
+        super().__init__()
+        self.entity_id = entity_id
+        self.add_item(AssignRanksSelect(entity_id))
+
+class AssignRanksSelect(discord.ui.Select):
+    def __init__(self, entity_id: int):
+        self.entity_id = entity_id
+        options = [
+            discord.SelectOption(label="Owner", value="Owner"),
+            discord.SelectOption(label="Leader", value="Leader"),
+            discord.SelectOption(label="Chief", value="Chief"),
+            discord.SelectOption(label="Member", value="Member")
+        ]
+        super().__init__(placeholder="Select a rank...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        rank_name = self.values[0]
+        await interaction.response.send_message("Please mention the user to assign the rank to:", ephemeral=True)
+        try:
+            message = await bot.wait_for(
+                'message',
+                timeout=30.0,
+                check=lambda m: m.author.id == interaction.user.id and m.channel.id == interaction.channel.id
+            )
+            user = message.mentions[0]
+            await bot.db.assign_rank_to_user(user.id, self.entity_id, rank_name)
+            await interaction.followup.send(f"Successfully assigned rank {rank_name} to {user.mention}!", ephemeral=True)
+        except TimeoutError:
+            await interaction.followup.send("Timed out waiting for user mention!", ephemeral=True)
+
 bot = MegatropoBot()
 pass_generator = PassGenerator()
 
@@ -1270,6 +1576,13 @@ async def setup(interaction: discord.Interaction):
     )
 
     await interaction.followup.send(embed=embed)
+
+@bot.tree.command(name="admin", description="Admin command for managing users, factions, and nations")
+@app_commands.checks.has_permissions(administrator=True)
+async def admin(interaction: discord.Interaction):
+    view = discord.ui.View()
+    view.add_item(AdminActionSelect())
+    await interaction.response.send_message("Select an admin action:", view=view, ephemeral=True)
 
 # Get token from environment variable
 TOKEN = os.getenv('DCBOTTOKEN')

@@ -755,3 +755,31 @@ class Database:
             return True
         except sqlite3.Error:
             return False
+
+    async def modify_faction_balance(self, faction_id: int, amount: float):
+        cursor = self.conn.cursor()
+        cursor.execute('UPDATE factions SET balance = balance + ? WHERE id = ?', (amount, faction_id))
+        self.conn.commit()
+
+    async def modify_nation_balance(self, nation_id: int, amount: float):
+        cursor = self.conn.cursor()
+        cursor.execute('UPDATE nations SET balance = balance + ? WHERE id = ?', (amount, nation_id))
+        self.conn.commit()
+
+    async def add_member_to_faction(self, user_id: int, faction_id: int):
+        cursor = self.conn.cursor()
+        cursor.execute('UPDATE users SET faction_id = ? WHERE id = ?', (faction_id, user_id))
+        self.conn.commit()
+
+    async def add_member_to_nation(self, user_id: int, nation_id: int):
+        cursor = self.conn.cursor()
+        cursor.execute('UPDATE users SET nation_id = ? WHERE id = ?', (nation_id, user_id))
+        self.conn.commit()
+
+    async def assign_rank_to_user(self, user_id: int, entity_id: int, rank_name: str):
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT id FROM ranks WHERE faction_id = ? AND name = ?', (entity_id, rank_name))
+        rank = cursor.fetchone()
+        if rank:
+            cursor.execute('UPDATE users SET rank_id = ? WHERE id = ?', (rank[0], user_id))
+            self.conn.commit()
