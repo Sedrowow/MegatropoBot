@@ -395,7 +395,17 @@ async def request_pass(interaction: discord.Interaction):
 
     expiry_date = datetime.now() + timedelta(days=30)
     user_pass = await bot.db.create_user_pass(user.id, expiry_date)
-    # ... similar to grant-pass command
+    if user_pass:
+        pass_image = pass_generator.create_pass_image(user_pass, interaction.user.name)
+        pass_image.save(f"temp_pass_{user.id}.png")
+        
+        await interaction.response.send_message(
+            f"Pass created successfully!",
+            file=discord.File(f"temp_pass_{user.id}.png")
+        )
+        os.remove(f"temp_pass_{user.id}.png")
+    else:
+        await interaction.response.send_message("Failed to create pass!")
 
 @bot.tree.command(name="show-pass", description="Show your pass")
 async def show_pass(interaction: discord.Interaction):
