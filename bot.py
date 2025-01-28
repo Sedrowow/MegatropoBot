@@ -640,7 +640,7 @@ async def disband(interaction: discord.Interaction, entity_type: str):
         message = await bot.wait_for(
             'message',
             timeout=60.0,
-            check=lambda m: m.author == interaction.user and m.channel == interaction.channel
+            check=lambda m: m.author.id == interaction.user.id and m.channel.id == interaction.channel.id
         )
         if message.content == str(confirmation_number):
             if entity_type.lower() == "faction":
@@ -684,7 +684,7 @@ async def add_member(interaction: discord.Interaction, user: discord.User = None
             message = await bot.wait_for(
                 'message',
                 timeout=30.0,
-                check=lambda m: m.author == interaction.user and m.channel == interaction.channel
+                check=lambda m: m.author.id == interaction.user.id and m.channel.id == interaction.channel.id
             )
             mentions = message.mentions
             if not mentions:
@@ -718,7 +718,7 @@ async def user_info(interaction: discord.Interaction, user: discord.User = None)
 @bot.tree.command(name="faction-info", description="Get information about a faction")
 @in_command_channel()
 async def faction_info(interaction: discord.Interaction):
-    await interaction.response.defer()
+    await interaction.response.defer()  # Defer the interaction at the beginning
     
     # Get all factions
     cursor = bot.db.conn.cursor()
@@ -952,7 +952,7 @@ async def upload_faction_icon(interaction: discord.Interaction):
         message = await bot.wait_for(
             'message',
             timeout=60.0,
-            check=lambda m: m.author == interaction.user and interaction.channel == m.channel and m.attachments
+            check=lambda m: m.author.id == interaction.user.id and interaction.channel.id == m.channel.id and m.attachments
         )
         
         if not message.attachments or not message.attachments[0].filename.lower().endswith('.png'):
@@ -986,7 +986,7 @@ async def upload_nation_icon(interaction: discord.Interaction):
         message = await bot.wait_for(
             'message',
             timeout=60.0,
-            check=lambda m: m.author == interaction.user and interaction.channel == m.channel and m.attachments
+            check=lambda m: m.author.id == interaction.user.id and interaction.channel.id == m.channel.id and m.attachments
         )
         
         if not message.attachments or not message.attachments[0].filename.lower().endswith('.png'):
@@ -1139,6 +1139,9 @@ async def setup(interaction: discord.Interaction):
         if not member.bot:
             success = await bot.initialize_user(member.id)
             member_status.append(f"{'✅' if success else '❌'} {member.name}")
+
+    # Refresh commands
+    await bot.tree.sync()
 
     # Create response embed
     embed = discord.Embed(
