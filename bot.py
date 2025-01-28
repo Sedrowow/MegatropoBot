@@ -484,6 +484,7 @@ async def add_member(interaction: discord.Interaction, user: discord.User = None
 @bot.tree.command(name="user-info", description="Get information about a user")
 @in_command_channel()
 async def user_info(interaction: discord.Interaction, user: discord.User = None):
+    await interaction.response.defer()  # Add this line to prevent timeout
     target_user = user or interaction.user
     user_data = await bot.db.get_user(target_user.id)
     faction = await bot.db.get_user_faction(target_user.id)
@@ -493,7 +494,7 @@ async def user_info(interaction: discord.Interaction, user: discord.User = None)
     embed.add_field(name="Balance", value=f"${user_data.balance}")
     embed.add_field(name="Faction", value=faction.name if faction else "None")
     
-    await interaction.response.send_message(embed=embed)
+    await interaction.followup.send(embed=embed)  # Use followup to send the message
 
 @bot.tree.command(name="faction-info", description="Get information about a faction")
 @in_command_channel()

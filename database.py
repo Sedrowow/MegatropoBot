@@ -17,7 +17,8 @@ class Database:
                 id INTEGER PRIMARY KEY,
                 balance REAL DEFAULT 2500,
                 faction_id INTEGER,
-                nation_id INTEGER
+                nation_id INTEGER,
+                rank_id INTEGER  -- Add this line to ensure the rank_id column exists
             )
         ''')
         cursor.execute('''
