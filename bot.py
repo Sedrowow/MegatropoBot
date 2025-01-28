@@ -518,7 +518,7 @@ async def create_rank(
     manage_ranks: bool = False,
     manage_alliances: bool = False
 ):
-    await interaction.response.defer()  # Defer the interaction at the beginning
+    await interaction.response.defer(thinking=True)  # Defer the interaction at the beginning
     user = await bot.db.get_user(interaction.user.id)
     
     if entity_type == "faction":
@@ -715,36 +715,37 @@ async def disband(interaction: discord.Interaction, entity_type: str):
     ]
 )
 async def add_member(interaction: discord.Interaction, entity_type: str, user: discord.User = None):
+    await interaction.response.defer(thinking=True)  # Defer the interaction at the beginning
     inviter = await bot.db.get_user(interaction.user.id)
     
     if entity_type == "faction":
         entity = await bot.db.get_user_faction(inviter.id)
         if not entity:
-            await interaction.response.send_message("You're not in a faction!")
+            await interaction.followup.send("You're not in a faction!")
             return
         rank = await bot.db.get_faction_member_rank(entity.id, inviter.id)
     elif entity_type == "nation":
         entity = await bot.db.get_nation(inviter.nation_id)
         if not entity:
-            await interaction.response.send_message("You're not in a nation!")
+            await interaction.followup.send("You're not in a nation!")
             return
         rank = await bot.db.get_faction_member_rank(entity.id, inviter.id)
     else:
-        await interaction.response.send_message("Invalid entity type! Use 'faction' or 'nation'.")
+        await interaction.followup.send("Invalid entity type! Use 'faction' or 'nation'.")
         return
 
     if not rank or FactionPermission.ADD_MEMBERS not in rank.permissions:
-        await interaction.response.send_message("You don't have permission to add members!")
+        await interaction.followup.send("You don't have permission to add members!")
         return
 
     if user:
         success = await bot.db.add_pending_invite(user.id, entity.id)
         if success:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"Invited {user.mention} to {entity.name}! They can accept with `/accept-invite {entity_type} {entity.id}`"
             )
     else:
-        await interaction.response.send_message("Please mention the users to invite in your next message:")
+        await interaction.followup.send("Please mention the users to invite in your next message:")
         try:
             message = await bot.wait_for(
                 'message',
@@ -778,6 +779,7 @@ async def add_member(interaction: discord.Interaction, entity_type: str, user: d
     ]
 )
 async def accept_invite(interaction: discord.Interaction, entity_type: str, entity_id: int):
+    await interaction.response.defer(thinking=True)  # Defer the interaction at the beginning
     user = await bot.db.get_user(interaction.user.id)
     
     if entity_type == "faction":
@@ -785,13 +787,13 @@ async def accept_invite(interaction: discord.Interaction, entity_type: str, enti
     elif entity_type == "nation":
         success = await bot.db.accept_nation_invite(user.id, entity_id)
     else:
-        await interaction.response.send_message("Invalid entity type! Use 'faction' or 'nation'.")
+        await interaction.followup.send("Invalid entity type! Use 'faction' or 'nation'.")
         return
 
     if success:
-        await interaction.response.send_message(f"Successfully joined the {entity_type}!")
+        await interaction.followup.send(f"Successfully joined the {entity_type}!")
     else:
-        await interaction.response.send_message(f"Failed to join the {entity_type}. Make sure you have a pending invite.")
+        await interaction.followup.send(f"Failed to join the {entity_type}. Make sure you have a pending invite.")
 
 @bot.tree.command(name="user-info", description="Get information about a user")
 @in_command_channel()
@@ -986,7 +988,7 @@ async def grant_pass(interaction: discord.Interaction, user: discord.User, days:
 @bot.tree.command(name="request-pass", description="Request a new pass (costs 5 if no faction/nation)")
 @in_command_channel()
 async def request_pass(interaction: discord.Interaction):
-    await interaction.response.defer()  # Add this line
+    await interaction.response.defer(thinking=True)  # Defer the interaction at the beginning
     
     user = await bot.db.get_user(interaction.user.id)
     
@@ -1066,14 +1068,15 @@ async def upload_faction_icon(interaction: discord.Interaction):
 @bot.tree.command(name="upload-nation-icon", description="Upload your nation's icon")
 @in_command_channel()
 async def upload_nation_icon(interaction: discord.Interaction):
+    await interaction.response.defer(thinking=True)  # Defer the interaction at the beginning
     user = await bot.db.get_user(interaction.user.id)
     nation = await bot.db.get_nation(user.nation_id) if user.nation_id else None
     
     if not nation or nation.owner_id != user.id:
-        await interaction.response.send_message("You must be a nation leader to upload an icon!")
+        await interaction.followup.send("You must be a nation leader to upload an icon!")
         return
 
-    await interaction.response.send_message("Please upload your nation icon (PNG format).")
+    await interaction.followup.send("Please upload your nation icon (PNG format).")
     
     try:
         message = await bot.wait_for(

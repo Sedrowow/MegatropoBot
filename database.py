@@ -561,8 +561,8 @@ class Database:
             )
             faction_id = cursor.lastrowid
             cursor.execute(
-                'UPDATE users SET faction_id = ? WHERE id = ?',
-                (faction_id, owner_id)
+                'UPDATE users SET faction_id = ?, rank_id = (SELECT id FROM ranks WHERE faction_id = ? AND name = "Owner") WHERE id = ?',
+                (faction_id, faction_id, owner_id)
             )
             self.conn.commit()
             return True
@@ -578,8 +578,8 @@ class Database:
             )
             nation_id = cursor.lastrowid
             cursor.execute(
-                'UPDATE users SET nation_id = ? WHERE id = ?',
-                (nation_id, owner_id)
+                'UPDATE users SET nation_id = ?, rank_id = (SELECT id FROM ranks WHERE faction_id = ? AND name = "Owner") WHERE id = ?',
+                (nation_id, nation_id, owner_id)
             )
             self.conn.commit()
             return True
@@ -599,8 +599,8 @@ class Database:
                 (nation_id, faction_id)
             )
             cursor.execute(
-                'UPDATE users SET nation_id = ? WHERE faction_id = ?',
-                (nation_id, faction_id)
+                'UPDATE users SET nation_id = ?, rank_id = (SELECT id FROM ranks WHERE faction_id = ? AND name = "Owner") WHERE faction_id = ?',
+                (nation_id, nation_id, faction_id)
             )
             self.conn.commit()
             return True

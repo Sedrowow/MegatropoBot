@@ -54,13 +54,19 @@ class PassGenerator:
 
         # Add faction icon if exists
         if user_pass.faction_id:
-            faction_icon = Image.open(f"images/faction_{user_pass.faction_id}.png")
+            try:
+                faction_icon = Image.open(f"images/faction_{user_pass.faction_id}.png")
+            except FileNotFoundError:
+                faction_icon = self._generate_default_icon("F")
             faction_icon = faction_icon.resize((50, 50))
             img.paste(faction_icon, (20, 20))
 
         # Add nation icon if exists
         if user_pass.nation_id:
-            nation_icon = Image.open(f"images/nation_{user_pass.nation_id}.png")
+            try:
+                nation_icon = Image.open(f"images/nation_{user_pass.nation_id}.png")
+            except FileNotFoundError:
+                nation_icon = self._generate_default_icon("N")
             nation_icon = nation_icon.resize((50, 50))
             img.paste(nation_icon, (self.width - 70, 20))
 
