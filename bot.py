@@ -9,11 +9,52 @@ from pass_generator import PassGenerator
 
 class MegatropoBot(commands.Bot):
     def __init__(self):
-        super().__init__(command_prefix="!", intents=discord.Intents.all())
+        intents = discord.Intents.all()
+        intents.members = True  # Enable members intent
+        intents.presence = True  # Enable presence intent
+        super().__init__(command_prefix="!", intents=intents)
         self.db = Database()
 
     async def setup_hook(self):
         await self.tree.sync()
+        
+    async def on_guild_join(self, guild: discord.Guild):
+        # Create or get bot role
+        bot_role = discord.utils.get(guild.roles, name="MegatroBot")
+        if not bot_role:
+            try:
+                bot_role = await guild.create_role(
+                    name="MegatroBot",
+                    permissions=discord.Permissions.all(),
+                    color=discord.Color.blue(),
+                    reason="Bot administrative role"
+                )
+                # Move role position to be high in hierarchy
+                positions = {bot_role: len(guild.roles) - 2}  # -1 to be below server owner
+                await guild.edit_role_positions(positions)
+            except discord.Forbidden:
+                print(f"Failed to create bot role in {guild.name}")
+                return
+
+        # Assign role to bot if not already assigned
+        bot_member = guild.get_member(self.user.id)
+        if bot_member and bot_role not in bot_member.roles:
+            try:
+                await bot_member.add_roles(bot_role, reason="Bot role assignment")
+            except discord.Forbidden:
+                print(f"Failed to assign bot role in {guild.name}")
+
+    async def on_ready(self):
+        print(f'{self.user} has connected to Discord!')
+        # Set bot's status to online and add custom status
+        await self.change_presence(
+            status=discord.Status.online,
+            activity=discord.Game(name="Managing Factions & Nations")
+        )
+        
+        # Create/assign role in all current guilds
+        for guild in self.guilds:
+            await self.on_guild_join(guild)
 
 bot = MegatropoBot()
 pass_generator = PassGenerator()

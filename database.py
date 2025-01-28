@@ -365,4 +365,159 @@ class Database:
             pass_identifier=identifier
         )
 
-    # Add more methods for pass verification and management...
+    async def get_user_faction(self, user_id: int) -> Optional[Faction]:
+        """Get a user's faction by their user ID"""
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT faction_id FROM users WHERE id = ?', (user_id,))
+        row = cursor.fetchone()
+        
+        if not row or not row[0]:  # If user has no faction
+            return None
+            
+        return await self.get_faction(row[0])
+
+    async def get_user_pass(self, user_id: int) -> Optional[UserPass]:
+        """Get a user's current pass"""
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT up.*, pi.colorless_part
+            FROM user_passes up
+            LEFT JOIN pass_identifiers pi ON (
+                pi.faction_id = up.faction_id AND 
+                pi.nation_id = up.nation_id
+            )
+            WHERE up.user_id = ?
+        ''', (user_id,))
+        row = cursor.fetchone()
+        
+        if not row:
+            return None
+            
+        return UserPass(
+            user_id=row[0],
+            faction_id=row[1],
+            nation_id=row[2],
+            issue_date=datetime.fromisoformat(row[3]),
+            expiry_date=datetime.fromisoformat(row[4]),
+            pass_identifier=PassIdentifier(
+                colorless_part=row[8] or '000000',
+                colored_part=row[5],
+                faction_id=row[1],
+                nation_id=row[2]
+            ),
+            faction_rank=row[6],
+            nation_rank=row[7]
+        )
+
+    async def revoke_pass(self, user_id: int) -> bool:
+        """Revoke a user's pass"""
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute('DELETE FROM user_passes WHERE user_id = ?', (user_id,))
+            self.conn.commit()
+            return True
+        except sqlite3.Error:
+            return False
+
+    async def update_pass_ranks(self, user_id: int, faction_rank: Optional[str] = None, nation_rank: Optional[str] = None) -> bool:
+        """Update the rank information on a user's pass"""
+        cursor = self.conn.cursor()
+        try:
+            updates = []
+            params = []
+            if faction_rank is not None:
+                updates.append("faction_rank = ?")
+                params.append(faction_rank)
+            if nation_rank is not None:
+                updates.append("nation_rank = ?")
+                params.append(nation_rank)
+            
+            if not updates:
+                return False
+                
+            params.append(user_id)
+            cursor.execute(
+                f'UPDATE user_passes SET {", ".join(updates)} WHERE user_id = ?',
+                tuple(params)
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.Error:
+            return False
+
+    async def extend_pass_validity(self, user_id: int, days: int) -> bool:
+        """Extend the validity of a user's pass"""
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute('''
+                UPDATE user_passes 
+                SET expiry_date = datetime(expiry_date, ?) 
+                WHERE user_id = ?
+            ''', (f'+{days} days', user_id))
+            self.conn.commit()
+            return True
+        except sqlite3.Error:
+            return False
+
+    async def get_expired_passes(self) -> List[int]:
+        """Get list of user IDs with expired passes"""
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT user_id FROM user_passes 
+            WHERE datetime(expiry_date) < datetime('now')
+        ''')
+        return [row[0] for row in cursor.fetchall()]
+
+    async def regenerate_faction_pass_identifier(self, faction_id: int) -> bool:
+        """Generate a new pass identifier for a faction (costs 50)"""
+        faction = await self.get_faction(faction_id)
+        if not faction or faction.balance < 50:
+            return False
+            
+        cursor = self.conn.cursor()
+        try:
+            import random
+            new_colorless = format(random.getrandbits(24), '06x')
+            
+            cursor.execute('''
+                INSERT OR REPLACE INTO pass_identifiers 
+                (faction_id, nation_id, colorless_part) 
+                VALUES (?, NULL, ?)
+            ''', (faction_id, new_colorless))
+            
+            cursor.execute(
+                'UPDATE factions SET balance = balance - 50 WHERE id = ?',
+                (faction_id,)
+            )
+            
+            self.conn.commit()
+            return True
+        except sqlite3.Error:
+            return False
+
+    async def regenerate_nation_pass_identifier(self, nation_id: int) -> bool:
+        """Generate a new pass identifier for a nation (costs 200)"""
+        nation = await self.get_nation(nation_id)
+        if not nation or nation.balance < 200:
+            return False
+            
+        cursor = self.conn.cursor()
+        try:
+            import random
+            new_colorless = format(random.getrandbits(24), '06x')
+            
+            cursor.execute('''
+                INSERT OR REPLACE INTO pass_identifiers 
+                (faction_id, nation_id, colorless_part) 
+                VALUES (NULL, ?, ?)
+            ''', (nation_id, new_colorless))
+            
+            cursor.execute(
+                'UPDATE nations SET balance = balance - 200 WHERE id = ?',
+                (nation_id,)
+            )
+            
+            self.conn.commit()
+            return True
+        except sqlite3.Error:
+            return False

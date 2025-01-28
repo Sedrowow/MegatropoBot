@@ -6,7 +6,7 @@ from models import UserPass
 
 class PassGenerator:
     def __init__(self):
-        self.font = ImageFont.truetype("arial.ttf", 16)
+        self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
         self.width = 400
         self.height = 250
         self.verification_height = 20
