@@ -112,16 +112,25 @@ class PassGenerator:
         line_y = self.height - 40
         start_x = (self.width - (self.colorless_width * self.grid_size)) // 2
 
-        # Draw colorless grid - normalize the pattern first
+        # Ensure colorless pattern is at least 72 characters
         colorless = user_pass.pass_identifier.colorless_part
-        if not colorless:
-            colorless = '0' * 72  # Default to all black if no pattern
+        if not colorless or len(colorless) < 72:
+            colorless = colorless.ljust(72, '0') if colorless else '0' * 72
 
-        # Draw colorless part in 12x6 grid
+        # Ensure colored pattern is at least 72 characters
+        colored = user_pass.pass_identifier.colored_part
+        if not colored or len(colored) < 72:
+            colored = colored.ljust(72, '0') if colored else '0' * 72
+
+        # Draw colorless part
         for i in range(72):
             x = i % 12
             y = i // 12
-            color_value = int(colorless[i], 16) * 16
+            try:
+                color_value = int(colorless[i], 16) * 16
+            except (ValueError, IndexError):
+                color_value = 0
+            
             for dx in range(self.grid_size):
                 for dy in range(self.grid_size):
                     draw.point(
@@ -129,20 +138,19 @@ class PassGenerator:
                         fill=(color_value, color_value, color_value)
                     )
 
-        # Draw colored part - normalize the pattern first
-        colored = user_pass.pass_identifier.colored_part
-        if len(colored) < 72:
-            colored = colored.ljust(72, '0')
-
+        # Draw colored part
         colored_start_x = start_x + (self.colorless_width * self.grid_size) + self.line_spacing
         for i in range(72):
             x = i % 12
             y = i // 12
-            color_val = int(colored[i], 16)
-            # Convert hex value to RGB
-            r = ((color_val & 0xF0) >> 4) * 16
-            g = (color_val & 0x0F) * 16
-            b = 0  # Keep blue at 0 for consistent verification
+            try:
+                color_val = int(colored[i], 16)
+                r = ((color_val & 0xF0) >> 4) * 16
+                g = (color_val & 0x0F) * 16
+                b = 0  # Keep blue at 0 for consistent verification
+            except (ValueError, IndexError):
+                r, g, b = 0, 0, 0
+
             for dx in range(self.grid_size):
                 for dy in range(self.grid_size):
                     draw.point(

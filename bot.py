@@ -6,7 +6,7 @@ from database import Database
 from models import User, Faction, Nation, FactionPermission
 from datetime import datetime, timedelta
 from pass_generator import PassGenerator
-from typing import Optional
+from typing import List, Optional
 
 def in_command_channel():
     """Check if command is used in the correct channel"""
@@ -167,6 +167,166 @@ class MegatropoBot(commands.Bot):
         except discord.Forbidden:
             return None
 
+    async def initialize_user(self, user_id: int) -> bool:
+        """Initialize a new user with starting money and default permissions"""
+        try:
+            await self.db.get_user(user_id)  # This creates the user if they don't exist
+            return True
+        except Exception as e:
+            print(f"Error initializing user {user_id}: {e}")
+            return False
+
+    async def initialize_server_structure(self, guild: discord.Guild) -> dict:
+        """Initialize all server categories and channels, return status report"""
+        status = {
+            "success": True,
+            "created": [],
+            "errors": []
+        }
+        
+        try:
+            # Create Bot Management category
+            bot_category = await guild.create_category(
+                "Bot Management",
+                overwrites={
+                    guild.default_role: discord.PermissionOverwrite(read_messages=False),
+                    guild.me: discord.PermissionOverwrite(read_messages=True)
+                }
+            )
+            status["created"].append("Bot Management category")
+
+            # Create command channel
+            cmd_channel = await bot_category.create_text_channel("megabot-cmd")
+            self.command_channels[guild.id] = cmd_channel.id
+            status["created"].append("megabot-cmd channel")
+
+            # Create announcement channels
+            faction_announce = await bot_category.create_text_channel(
+                "faction-announcements",
+                overwrites={
+                    guild.default_role: discord.PermissionOverwrite(send_messages=False),
+                    guild.me: discord.PermissionOverwrite(send_messages=True)
+                }
+            )
+            self.faction_announcement_channels[guild.id] = faction_announce.id
+            status["created"].append("faction-announcements channel")
+
+            nation_announce = await bot_category.create_text_channel(
+                "nation-announcements",
+                overwrites={
+                    guild.default_role: discord.PermissionOverwrite(send_messages=False),
+                    guild.me: discord.PermissionOverwrite(send_messages=True)
+                }
+            )
+            self.nation_announcement_channels[guild.id] = nation_announce.id
+            status["created"].append("nation-announcements channel")
+
+            # Create bot role if it doesn't exist
+            bot_role = discord.utils.get(guild.roles, name="MegatroBot")
+            if not bot_role:
+                bot_role = await guild.create_role(
+                    name="MegatroBot",
+                    permissions=discord.Permissions.all(),
+                    color=discord.Color.red(),
+                    reason="Bot administrative role"
+                )
+                positions = {bot_role: len(guild.roles) - 1}
+                await guild.edit_role_positions(positions)
+                status["created"].append("MegatroBot role")
+
+            # Ensure images directory exists
+            os.makedirs("images", exist_ok=True)
+            status["created"].append("images directory")
+
+        except Exception as e:
+            status["success"] = False
+            status["errors"].append(str(e))
+
+        return status
+
+class FactionSelect(discord.ui.Select):
+    def __init__(self, factions: List[Faction]):
+        options = [
+            discord.SelectOption(
+                label=faction.name,
+                value=str(faction.id),
+                description=f"Owner: {faction.owner_id}"
+            ) for faction in factions
+        ]
+        super().__init__(placeholder="Select a faction...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        faction_id = int(self.values[0])
+        faction = await interaction.client.db.get_faction(faction_id)
+        if not faction:
+            await interaction.response.send_message("Faction no longer exists!", ephemeral=True)
+            return
+
+        members = await interaction.client.db.get_faction_members(faction.id)
+        owner = await interaction.client.fetch_user(faction.owner_id)
+        
+        embed = discord.Embed(title=f"Faction Info - {faction.name}", color=discord.Color.blue())
+        embed.add_field(name="ID", value=faction.id)
+        embed.add_field(name="Owner", value=owner.name)
+        embed.add_field(name="Balance", value=f"${faction.balance}")
+        embed.add_field(name="Member Count", value=len(members))
+        
+        if faction.nation_id:
+            nation = await interaction.client.db.get_nation(faction.nation_id)
+            embed.add_field(name="Nation", value=nation.name if nation else "None")
+        
+        if faction.ranks:
+            ranks_text = "\n".join([f"{r.name} (Priority: {r.priority})" for r in faction.ranks.values()])
+            embed.add_field(name="Ranks", value=ranks_text or "No ranks", inline=False)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+class FactionSelectView(discord.ui.View):
+    def __init__(self, factions: List[Faction]):
+        super().__init__()
+        self.add_item(FactionSelect(factions))
+
+class NationSelect(discord.ui.Select):
+    def __init__(self, nations: List[Nation]):
+        options = [
+            discord.SelectOption(
+                label=nation.name,
+                value=str(nation.id),
+                description=f"Owner: {nation.owner_id}"
+            ) for nation in nations
+        ]
+        super().__init__(placeholder="Select a nation...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        nation_id = int(self.values[0])
+        nation = await interaction.client.db.get_nation(nation_id)
+        if not nation:
+            await interaction.response.send_message("Nation no longer exists!", ephemeral=True)
+            return
+
+        owner = await interaction.client.fetch_user(nation.owner_id)
+        
+        embed = discord.Embed(title=f"Nation Info - {nation.name}", color=discord.Color.gold())
+        embed.add_field(name="ID", value=nation.id)
+        embed.add_field(name="Owner", value=owner.name)
+        embed.add_field(name="Balance", value=f"${nation.balance}")
+        
+        if nation.allies:
+            allies_text = "\n".join([f"• {ally}" for ally in nation.allies])
+            embed.add_field(name="Allies", value=allies_text or "No allies", inline=False)
+
+        cursor = interaction.client.db.conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM factions WHERE nation_id = ?', (nation.id,))
+        faction_count = cursor.fetchone()[0]
+        embed.add_field(name="Number of Factions", value=faction_count)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+class NationSelectView(discord.ui.View):
+    def __init__(self, nations: List[Nation]):
+        super().__init__()
+        self.add_item(NationSelect(nations))
+
 bot = MegatropoBot()
 pass_generator = PassGenerator()
 
@@ -301,6 +461,8 @@ async def add_member(interaction: discord.Interaction, user: discord.User = None
 @bot.tree.command(name="user-info", description="Get information about a user")
 @in_command_channel()
 async def user_info(interaction: discord.Interaction, user: discord.User = None):
+    await interaction.response.defer()  # Add this line
+    
     target_user = user or interaction.user
     user_data = await bot.db.get_user(target_user.id)
     faction = await bot.db.get_user_faction(target_user.id)
@@ -310,74 +472,53 @@ async def user_info(interaction: discord.Interaction, user: discord.User = None)
     embed.add_field(name="Balance", value=f"${user_data.balance}")
     embed.add_field(name="Faction", value=faction.name if faction else "None")
     
-    await interaction.response.send_message(embed=embed)
+    await interaction.followup.send(embed=embed)  # Change to followup
 
 @bot.tree.command(name="faction-info", description="Get information about a faction")
 @in_command_channel()
-async def faction_info(interaction: discord.Interaction, name: str = None):
-    if name:
-        faction = await bot.db.get_faction_by_name(name)
-    else:
-        user = await bot.db.get_user(interaction.user.id)
-        faction = await bot.db.get_user_faction(user.id)
-
-    if not faction:
-        await interaction.response.send_message("Faction not found!")
+async def faction_info(interaction: discord.Interaction):
+    await interaction.response.defer()
+    
+    # Get all factions
+    cursor = bot.db.conn.cursor()
+    cursor.execute('SELECT id FROM factions')
+    faction_ids = [row[0] for row in cursor.fetchall()]
+    
+    if not faction_ids:
+        await interaction.followup.send("No factions exist yet!")
         return
-
-    members = await bot.db.get_faction_members(faction.id)
-    owner = await bot.client.fetch_user(faction.owner_id)
+        
+    factions = []
+    for fid in faction_ids:
+        faction = await bot.db.get_faction(fid)
+        if faction:
+            factions.append(faction)
     
-    embed = discord.Embed(title=f"Faction Info - {faction.name}", color=discord.Color.blue())
-    embed.add_field(name="ID", value=faction.id)
-    embed.add_field(name="Owner", value=owner.name)
-    embed.add_field(name="Balance", value=f"${faction.balance}")
-    embed.add_field(name="Member Count", value=len(members))
-    
-    if faction.nation_id:
-        nation = await bot.db.get_nation(faction.nation_id)
-        embed.add_field(name="Nation", value=nation.name if nation else "None")
-    
-    if faction.ranks:
-        ranks_text = "\n".join([f"{r.name} (Priority: {r.priority})" for r in faction.ranks.values()])
-        embed.add_field(name="Ranks", value=ranks_text or "No ranks", inline=False)
-
-    await interaction.response.send_message(embed=embed)
+    view = FactionSelectView(factions)
+    await interaction.followup.send("Select a faction to view:", view=view)
 
 @bot.tree.command(name="nation-info", description="Get information about a nation")
 @in_command_channel()
-async def nation_info(interaction: discord.Interaction, name: str = None):
-    if name:
-        nation = await bot.db.get_nation_by_name(name)
-    else:
-        user = await bot.db.get_user(interaction.user.id)
-        if user.nation_id:
-            nation = await bot.db.get_nation(user.nation_id)
-        else:
-            await interaction.response.send_message("You're not in a nation!")
-            return
-
-    if not nation:
-        await interaction.response.send_message("Nation not found!")
-        return
-
-    owner = await bot.client.fetch_user(nation.owner_id)
+async def nation_info(interaction: discord.Interaction):
+    await interaction.response.defer()
     
-    embed = discord.Embed(title=f"Nation Info - {nation.name}", color=discord.Color.gold())
-    embed.add_field(name="ID", value=nation.id)
-    embed.add_field(name="Owner", value=owner.name)
-    embed.add_field(name="Balance", value=f"${nation.balance}")
-    
-    if nation.allies:
-        allies_text = "\n".join([f"• {ally}" for ally in nation.allies])
-        embed.add_field(name="Allies", value=allies_text or "No allies", inline=False)
-
+    # Get all nations
     cursor = bot.db.conn.cursor()
-    cursor.execute('SELECT COUNT(*) FROM factions WHERE nation_id = ?', (nation.id,))
-    faction_count = cursor.fetchone()[0]
-    embed.add_field(name="Number of Factions", value=faction_count)
-
-    await interaction.response.send_message(embed=embed)
+    cursor.execute('SELECT id FROM nations')
+    nation_ids = [row[0] for row in cursor.fetchall()]
+    
+    if not nation_ids:
+        await interaction.followup.send("No nations exist yet!")
+        return
+        
+    nations = []
+    for nid in nation_ids:
+        nation = await bot.db.get_nation(nid)
+        if nation:
+            nations.append(nation)
+    
+    view = NationSelectView(nations)
+    await interaction.followup.send("Select a nation to view:", view=view)
 
 @bot.tree.command(name="form-alliance", description="Form an alliance with another nation")
 @in_command_channel()
@@ -509,11 +650,13 @@ async def grant_pass(interaction: discord.Interaction, user: discord.User, days:
 @bot.tree.command(name="request-pass", description="Request a new pass (costs 5 if no faction/nation)")
 @in_command_channel()
 async def request_pass(interaction: discord.Interaction):
+    await interaction.response.defer()  # Add this line
+    
     user = await bot.db.get_user(interaction.user.id)
     
     if not user.faction_id and not user.nation_id:
         if user.balance < 5:
-            await interaction.response.send_message("You need $5 to request a pass!")
+            await interaction.followup.send("You need $5 to request a pass!")
             return
         await bot.db.modify_balance(user.id, -5)
 
@@ -523,13 +666,13 @@ async def request_pass(interaction: discord.Interaction):
         pass_image = pass_generator.create_pass_image(user_pass, interaction.user.name)
         pass_image.save(f"temp_pass_{user.id}.png")
         
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"Pass created successfully!",
             file=discord.File(f"temp_pass_{user.id}.png")
         )
         os.remove(f"temp_pass_{user.id}.png")
     else:
-        await interaction.response.send_message("Failed to create pass!")
+        await interaction.followup.send("Failed to create pass!")
 
 @bot.tree.command(name="show-pass", description="Show your pass")
 @in_command_channel()
@@ -737,6 +880,54 @@ async def announce(
         await channel.send(embed=embed)
 
     await interaction.response.send_message("Announcement(s) sent successfully!")
+
+@bot.tree.command(name="setup", description="Initialize bot setup for the server")
+@app_commands.checks.has_permissions(administrator=True)
+async def setup(interaction: discord.Interaction):
+    """Initialize server structure and user data"""
+    await interaction.response.defer()
+
+    # Initialize server structure
+    status = await bot.initialize_server_structure(interaction.guild)
+    
+    # Initialize all users
+    member_status = []
+    for member in interaction.guild.members:
+        if not member.bot:
+            success = await bot.initialize_user(member.id)
+            member_status.append(f"{'✅' if success else '❌'} {member.name}")
+
+    # Create response embed
+    embed = discord.Embed(
+        title="Server Setup Status",
+        color=discord.Color.green() if status["success"] else discord.Color.red()
+    )
+
+    # Add server structure status
+    if status["created"]:
+        embed.add_field(
+            name="Created Successfully",
+            value="\n".join(f"✅ {item}" for item in status["created"]),
+            inline=False
+        )
+
+    if status["errors"]:
+        embed.add_field(
+            name="Errors",
+            value="\n".join(f"❌ {error}" for error in status["errors"]),
+            inline=False
+        )
+
+    # Add user initialization status
+    embed.add_field(
+        name="User Initialization",
+        value="\n".join(member_status[:25]) + (
+            f"\n...and {len(member_status) - 25} more" if len(member_status) > 25 else ""
+        ),
+        inline=False
+    )
+
+    await interaction.followup.send(embed=embed)
 
 # Get token from environment variable
 TOKEN = os.getenv('DCBOTTOKEN')
