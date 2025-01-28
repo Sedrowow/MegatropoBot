@@ -112,7 +112,12 @@ class PassGenerator:
         line_y = self.height - 40
         start_x = (self.width - (self.colorless_width * self.grid_size)) // 2
 
-        # Draw colorless grid
+        # Draw colorless grid - normalize the pattern first
+        colorless = user_pass.pass_identifier.colorless_part
+        if not colorless:
+            colorless = '0' * 72  # Default to all black if no pattern
+
+        # Draw colorless part in 12x6 grid
         for i in range(72):
             x = i % 12
             y = i // 12
@@ -124,15 +129,20 @@ class PassGenerator:
                         fill=(color_value, color_value, color_value)
                     )
 
-        # Draw colored grid
+        # Draw colored part - normalize the pattern first
+        colored = user_pass.pass_identifier.colored_part
+        if len(colored) < 72:
+            colored = colored.ljust(72, '0')
+
         colored_start_x = start_x + (self.colorless_width * self.grid_size) + self.line_spacing
         for i in range(72):
             x = i % 12
             y = i // 12
-            color_value = int(colored[i], 16)
-            r = ((color_value & 0xF0) >> 4) * 16
-            g = (color_value & 0x0F) * 16
-            b = ((i % 3) * 64)  # Add some blue variation
+            color_val = int(colored[i], 16)
+            # Convert hex value to RGB
+            r = ((color_val & 0xF0) >> 4) * 16
+            g = (color_val & 0x0F) * 16
+            b = 0  # Keep blue at 0 for consistent verification
             for dx in range(self.grid_size):
                 for dy in range(self.grid_size):
                     draw.point(
@@ -152,24 +162,24 @@ class PassGenerator:
         colored_values = []
 
         # Extract patterns for both parts
-        for y in range(self.colorless_height):
-            for x in range(self.colorless_width):
-                # Sample colorless grid
-                sample_x = start_x + x * self.grid_size + self.grid_size // 2
-                sample_y = line_y + y * self.grid_size + self.grid_size // 2
-                value = line_data[sample_y][sample_x][0]
-                colorless_values.append(format(value // 16, 'x'))
+        for i in range(72):
+            x = i % 12
+            y = i // 12
 
-                # Sample colored grid
-                colored_start_x = start_x + (self.colorless_width * self.grid_size) + self.line_spacing
-                sample_x = colored_start_x + x * self.grid_size + self.grid_size // 2
-                r, g, b = line_data[sample_y][sample_x]
-                r_val = (r > 32) * 4
-                g_val = (g > 32) * 2
-                b_val = (b > 32) * 1
-                colored_values.append(format(r_val + g_val + b_val, 'x'))
+            # Sample colorless grid
+            sample_x = start_x + x * self.grid_size + self.grid_size // 2
+            sample_y = line_y + y * self.grid_size + self.grid_size // 2
+            gray_value = line_data[sample_y][sample_x][0]
+            colorless_values.append(format(gray_value // 16, 'x'))
 
-        # Join all values to create the complete patterns
+            # Sample colored grid
+            colored_start_x = start_x + (self.colorless_width * self.grid_size) + self.line_spacing
+            sample_x = colored_start_x + x * self.grid_size + self.grid_size // 2
+            r, g, _ = line_data[sample_y][sample_x]
+            # Convert RGB back to hex value
+            color_val = ((r // 16) << 4) | (g // 16)
+            colored_values.append(format(color_val, '02x'))
+
         return (''.join(colorless_values), ''.join(colored_values))
 
     def verify_pass_image(self, image_path: str, user_pass: UserPass) -> tuple[bool, list[str], Image.Image]:
@@ -184,8 +194,10 @@ class PassGenerator:
 
             # Extract and verify the verification line
             extracted_colorless, extracted_colored = self.extract_verification_line(image)
-            expected_colorless = user_pass.pass_identifier.colorless_part[:72]  # Only compare first 72 chars
-            expected_colored = user_pass.pass_identifier.colored_part[:72]
+            
+            # Normalize expected values
+            expected_colorless = user_pass.pass_identifier.colorless_part or '0' * 72
+            expected_colored = user_pass.pass_identifier.colored_part.ljust(72, '0')
 
             if extracted_colorless != expected_colorless:
                 discrepancies.append("Invalid faction/nation identifier")
