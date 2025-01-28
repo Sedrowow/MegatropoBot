@@ -3,10 +3,12 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 from database import Database
-from models import User, Faction, Nation, FactionPermission
+from models import User, Faction, Nation, FactionPermission, Rank
 from datetime import datetime, timedelta
 from pass_generator import PassGenerator
 from typing import List, Optional
+from PIL import Image, ImageDraw, ImageFont
+import random
 
 def in_command_channel():
     """Check if command is used in the correct channel"""
@@ -266,6 +268,27 @@ class MegatropoBot(commands.Bot):
 
         return status
 
+    def generate_default_icon(self, name: str) -> Image.Image:
+        """Generate a default icon with the first letter and a random color"""
+        size = (100, 100)
+        img = Image.new('RGB', size, color=(255, 255, 255))
+        draw = ImageDraw.Draw(img)
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 50)
+        
+        # Generate random color
+        color = tuple(random.randint(0, 255) for _ in range(3))
+        
+        # Draw circular vignette
+        draw.ellipse([(0, 0), size], fill=color)
+        
+        # Draw the first letter
+        text = name[0].upper()
+        text_size = draw.textsize(text, font=font)
+        text_position = ((size[0] - text_size[0]) // 2, (size[1] - text_size[1]) // 2)
+        draw.text(text_position, text, fill=(255, 255, 255), font=font)
+        
+        return img
+
 class FactionSelect(discord.ui.Select):
     def __init__(self, factions: List[Faction]):
         options = [
@@ -374,6 +397,7 @@ async def create_faction(interaction: discord.Interaction, name: str):
     success = await bot.db.create_faction(name, user.id)
     if success:
         await bot.db.modify_balance(user.id, -500)
+        await bot.db.create_default_ranks_for_faction(user.id)
         await interaction.response.send_message(f"Faction {name} created successfully!")
     else:
         await interaction.response.send_message("Faction name already exists!")
@@ -393,6 +417,7 @@ async def claim_land_request(interaction: discord.Interaction, name: str, paymen
         success = await bot.db.create_nation(name, user.id)
         if success:
             await bot.db.modify_balance(user.id, -1000)
+            await bot.db.create_default_ranks_for_nation(user.id)
             await interaction.response.send_message(f"Nation {name} created successfully!")
     else:
         faction = await bot.db.get_user_faction(user.id)
@@ -402,6 +427,7 @@ async def claim_land_request(interaction: discord.Interaction, name: str, paymen
         success = await bot.db.convert_faction_to_nation(faction.id, name)
         if success:
             await bot.db.modify_faction_balance(faction.id, -1000)
+            await bot.db.create_default_ranks_for_nation(user.id)
             await interaction.response.send_message(f"Faction converted to nation {name} successfully!")
 
 @bot.tree.command(name="create_nation", description="Create a new nation")
@@ -410,6 +436,16 @@ async def claim_land_request(interaction: discord.Interaction, name: str, paymen
     name="Name of the new nation",
     type="Type of creation: 'factionconvert' or 'new'",
     payment_source="Payment source: 'personal' or 'faction' (only for 'new' type)"
+)
+@app_commands.choices(
+    type=[
+        app_commands.Choice(name="Faction Convert", value="factionconvert"),
+        app_commands.Choice(name="New", value="new")
+    ],
+    payment_source=[
+        app_commands.Choice(name="Personal", value="personal"),
+        app_commands.Choice(name="Faction", value="faction")
+    ]
 )
 async def create_nation(interaction: discord.Interaction, name: str, type: str, payment_source: Optional[str] = None):
     user = await bot.db.get_user(interaction.user.id)
@@ -422,6 +458,7 @@ async def create_nation(interaction: discord.Interaction, name: str, type: str, 
         success = await bot.db.convert_faction_to_nation(faction.id, name)
         if success:
             await bot.db.modify_faction_balance(faction.id, -1000)
+            await bot.db.create_default_ranks_for_nation(user.id)
             await interaction.response.send_message(f"Faction converted to nation {name} successfully!")
         else:
             await interaction.response.send_message("Failed to convert faction to nation!")
@@ -433,6 +470,7 @@ async def create_nation(interaction: discord.Interaction, name: str, type: str, 
             success = await bot.db.create_nation(name, user.id)
             if success:
                 await bot.db.modify_balance(user.id, -1000)
+                await bot.db.create_default_ranks_for_nation(user.id)
                 await interaction.response.send_message(f"Nation {name} created successfully!")
             else:
                 await interaction.response.send_message("Failed to create nation!")
@@ -444,6 +482,7 @@ async def create_nation(interaction: discord.Interaction, name: str, type: str, 
             success = await bot.db.create_nation(name, user.id)
             if success:
                 await bot.db.modify_faction_balance(faction.id, -1000)
+                await bot.db.create_default_ranks_for_nation(user.id)
                 await interaction.response.send_message(f"Nation {name} created successfully!")
             else:
                 await interaction.response.send_message("Failed to create nation!")
