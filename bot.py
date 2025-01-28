@@ -452,10 +452,20 @@ async def create_nation(interaction: discord.Interaction, name: str, type: str, 
     else:
         await interaction.response.send_message("Invalid type! Use 'factionconvert' or 'new'.")
 
-@bot.tree.command(name="create-rank", description="Create a new rank in your faction")
+@bot.tree.command(name="create-rank", description="Create a new rank in your faction or nation")
 @in_command_channel()
+@app_commands.describe(
+    entity_type="Type of entity: 'faction' or 'nation'",
+    name="Name of the new rank",
+    priority="Priority of the new rank",
+    manage_money="Permission to manage money",
+    manage_members="Permission to manage members",
+    manage_ranks="Permission to manage ranks",
+    manage_alliances="Permission to manage alliances"
+)
 async def create_rank(
     interaction: discord.Interaction,
+    entity_type: str,
     name: str,
     priority: int,
     manage_money: bool = False,
@@ -463,15 +473,27 @@ async def create_rank(
     manage_ranks: bool = False,
     manage_alliances: bool = False
 ):
+    await interaction.response.defer()  # Defer the interaction at the beginning
     user = await bot.db.get_user(interaction.user.id)
-    faction = await bot.db.get_user_faction(user.id)
-    if not faction:
-        await interaction.response.send_message("You're not in a faction!")
+    
+    if entity_type.lower() == "faction":
+        entity = await bot.db.get_user_faction(user.id)
+        if not entity:
+            await interaction.followup.send("You're not in a faction!")
+            return
+        user_rank = await bot.db.get_faction_member_rank(entity.id, user.id)
+    elif entity_type.lower() == "nation":
+        entity = await bot.db.get_nation(user.nation_id)
+        if not entity:
+            await interaction.followup.send("You're not in a nation!")
+            return
+        user_rank = await bot.db.get_faction_member_rank(entity.id, user.id)
+    else:
+        await interaction.followup.send("Invalid entity type! Use 'faction' or 'nation'.")
         return
 
-    user_rank = await bot.db.get_faction_member_rank(faction.id, user.id)
     if not user_rank or user_rank.priority > 0:
-        await interaction.response.send_message("You don't have permission to create ranks!")
+        await interaction.followup.send("You don't have permission to create ranks!")
         return
 
     permissions = set()
@@ -480,11 +502,160 @@ async def create_rank(
     if manage_ranks: permissions.add(FactionPermission.MANAGE_RANKS)
     if manage_alliances: permissions.add(FactionPermission.MANAGE_ALLIANCES)
 
-    rank_id = await bot.db.create_rank(faction.id, name, priority, [p.name for p in permissions])
+    rank_id = await bot.db.create_rank(entity.id, name, priority, [p.name for p in permissions])
     if rank_id:
-        await interaction.response.send_message(f"Rank {name} created successfully!")
+        await interaction.followup.send(f"Rank {name} created successfully!")
     else:
-        await interaction.response.send_message("Failed to create rank!")
+        await interaction.followup.send("Failed to create rank!")
+
+@bot.tree.command(name="remove-rank", description="Remove a rank from your faction or nation")
+@in_command_channel()
+@app_commands.describe(
+    entity_type="Type of entity: 'faction' or 'nation'",
+    rank_name="Name of the rank to remove"
+)
+async def remove_rank(interaction: discord.Interaction, entity_type: str, rank_name: str):
+    await interaction.response.defer()  # Defer the interaction at the beginning
+    user = await bot.db.get_user(interaction.user.id)
+    
+    if entity_type.lower() == "faction":
+        entity = await bot.db.get_user_faction(user.id)
+        if not entity:
+            await interaction.followup.send("You're not in a faction!")
+            return
+        user_rank = await bot.db.get_faction_member_rank(entity.id, user.id)
+    elif entity_type.lower() == "nation":
+        entity = await bot.db.get_nation(user.nation_id)
+        if not entity:
+            await interaction.followup.send("You're not in a nation!")
+            return
+        user_rank = await bot.db.get_faction_member_rank(entity.id, user.id)
+    else:
+        await interaction.followup.send("Invalid entity type! Use 'faction' or 'nation'.")
+        return
+
+    if not user_rank or user_rank.priority > 0:
+        await interaction.followup.send("You don't have permission to remove ranks!")
+        return
+
+    success = await bot.db.remove_rank(entity.id, rank_name)
+    if success:
+        await interaction.followup.send(f"Rank {rank_name} removed successfully!")
+    else:
+        await interaction.followup.send("Failed to remove rank!")
+
+@bot.tree.command(name="edit-rank", description="Edit a rank in your faction or nation")
+@in_command_channel()
+@app_commands.describe(
+    entity_type="Type of entity: 'faction' or 'nation'",
+    rank_name="Name of the rank to edit",
+    new_name="New name of the rank",
+    new_priority="New priority of the rank",
+    manage_money="Permission to manage money",
+    manage_members="Permission to manage members",
+    manage_ranks="Permission to manage ranks",
+    manage_alliances="Permission to manage alliances"
+)
+async def edit_rank(
+    interaction: discord.Interaction,
+    entity_type: str,
+    rank_name: str,
+    new_name: Optional[str] = None,
+    new_priority: Optional[int] = None,
+    manage_money: Optional[bool] = None,
+    manage_members: Optional[bool] = None,
+    manage_ranks: Optional[bool] = None,
+    manage_alliances: Optional[bool] = None
+):
+    await interaction.response.defer()  # Defer the interaction at the beginning
+    user = await bot.db.get_user(interaction.user.id)
+    
+    if entity_type.lower() == "faction":
+        entity = await bot.db.get_user_faction(user.id)
+        if not entity:
+            await interaction.followup.send("You're not in a faction!")
+            return
+        user_rank = await bot.db.get_faction_member_rank(entity.id, user.id)
+    elif entity_type.lower() == "nation":
+        entity = await bot.db.get_nation(user.nation_id)
+        if not entity:
+            await interaction.followup.send("You're not in a nation!")
+            return
+        user_rank = await bot.db.get_faction_member_rank(entity.id, user.id)
+    else:
+        await interaction.followup.send("Invalid entity type! Use 'faction' or 'nation'.")
+        return
+
+    if not user_rank or user_rank.priority > 0:
+        await interaction.followup.send("You don't have permission to edit ranks!")
+        return
+
+    permissions = set()
+    if manage_money is not None: permissions.add(FactionPermission.MANAGE_MONEY)
+    if manage_members is not None: permissions.add(FactionPermission.ADD_MEMBERS)
+    if manage_ranks is not None: permissions.add(FactionPermission.MANAGE_RANKS)
+    if manage_alliances is not None: permissions.add(FactionPermission.MANAGE_ALLIANCES)
+
+    success = await bot.db.edit_rank(entity.id, rank_name, new_name, new_priority, [p.name for p in permissions])
+    if success:
+        await interaction.followup.send(f"Rank {rank_name} edited successfully!")
+    else:
+        await interaction.followup.send("Failed to edit rank!")
+
+@bot.tree.command(name="disband", description="Disband your faction or nation")
+@in_command_channel()
+@app_commands.describe(
+    entity_type="Type of entity: 'faction' or 'nation'"
+)
+async def disband(interaction: discord.Interaction, entity_type: str):
+    await interaction.response.defer()  # Defer the interaction at the beginning
+    user = await bot.db.get_user(interaction.user.id)
+    
+    if entity_type.lower() == "faction":
+        entity = await bot.db.get_user_faction(user.id)
+        if not entity:
+            await interaction.followup.send("You're not in a faction!")
+            return
+        if entity.owner_id != user.id:
+            await interaction.followup.send("Only the faction owner can disband the faction!")
+            return
+    elif entity_type.lower() == "nation":
+        entity = await bot.db.get_nation(user.nation_id)
+        if not entity:
+            await interaction.followup.send("You're not in a nation!")
+            return
+        if entity.owner_id != user.id:
+            await interaction.followup.send("Only the nation leader can disband the nation!")
+            return
+    else:
+        await interaction.followup.send("Invalid entity type! Use 'faction' or 'nation'.")
+        return
+
+    # Generate a random number for confirmation
+    import random
+    confirmation_number = random.randint(1000, 9999)
+    await interaction.followup.send(f"To confirm disbanding the {entity_type}, please type the following number: {confirmation_number}")
+
+    try:
+        message = await bot.wait_for(
+            'message',
+            timeout=60.0,
+            check=lambda m: m.author == interaction.user and m.channel == interaction.channel
+        )
+        if message.content == str(confirmation_number):
+            if entity_type.lower() == "faction":
+                success = await bot.db.disband_faction(entity.id)
+            else:
+                success = await bot.db.disband_nation(entity.id)
+            
+            if success:
+                await interaction.followup.send(f"{entity_type.capitalize()} disbanded successfully!")
+            else:
+                await interaction.followup.send(f"Failed to disband {entity_type}!")
+        else:
+            await interaction.followup.send("Disbanding cancelled. Incorrect confirmation number.")
+    except TimeoutError:
+        await interaction.followup.send("Disbanding cancelled. Confirmation timed out.")
 
 @bot.tree.command(name="add-member", description="Add a member to your faction")
 @in_command_channel()

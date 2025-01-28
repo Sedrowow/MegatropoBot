@@ -606,3 +606,65 @@ class Database:
             return True
         except sqlite3.IntegrityError:
             return False
+
+    async def remove_rank(self, entity_id: int, rank_name: str) -> bool:
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute(
+                'DELETE FROM ranks WHERE faction_id = ? AND name = ?',
+                (entity_id, rank_name)
+            )
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.Error:
+            return False
+
+    async def edit_rank(self, entity_id: int, rank_name: str, new_name: Optional[str], new_priority: Optional[int], permissions: List[str]) -> bool:
+        cursor = self.conn.cursor()
+        try:
+            updates = []
+            params = []
+            if new_name:
+                updates.append("name = ?")
+                params.append(new_name)
+            if new_priority is not None:
+                updates.append("priority = ?")
+                params.append(new_priority)
+            if permissions:
+                updates.append("permissions = ?")
+                params.append(json.dumps(permissions))
+            
+            if not updates:
+                return False
+                
+            params.append(entity_id)
+            params.append(rank_name)
+            cursor.execute(
+                f'UPDATE ranks SET {", ".join(updates)} WHERE faction_id = ? AND name = ?',
+                tuple(params)
+            )
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.Error:
+            return False
+
+    async def disband_faction(self, faction_id: int) -> bool:
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute('DELETE FROM factions WHERE id = ?', (faction_id,))
+            cursor.execute('UPDATE users SET faction_id = NULL WHERE faction_id = ?', (faction_id,))
+            self.conn.commit()
+            return True
+        except sqlite3.Error:
+            return False
+
+    async def disband_nation(self, nation_id: int) -> bool:
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute('DELETE FROM nations WHERE id = ?', (nation_id,))
+            cursor.execute('UPDATE users SET nation_id = NULL WHERE nation_id = ?', (nation_id,))
+            cursor.execute('UPDATE factions SET nation_id = NULL WHERE nation_id = ?', (nation_id,))
+            self.conn.commit()
+            return True
+        except sqlite3.Error:
+            return False
