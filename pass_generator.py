@@ -10,11 +10,12 @@ class PassGenerator:
         self.width = 400
         self.height = 250
         self.verification_height = 20
-        self.colorless_width = 12
-        self.colorless_height = 6
-        self.colored_width = 12
-        self.colored_height = 6
-        self.line_spacing = 2  # Space between colorless and colored parts
+        self.colorless_width = 12  # 12 pixels wide
+        self.colorless_height = 6  # 6 rows
+        self.colored_width = 12    # 12 pixels wide
+        self.colored_height = 6    # 6 rows
+        self.line_spacing = 4      # Space between colorless and colored parts
+        self.grid_size = 2         # Size of each grid cell in pixels
 
     def create_pass_image(self, user_pass: UserPass, username: str) -> Image.Image:
         img = Image.new('RGB', (self.width, self.height), 'white')
@@ -49,55 +50,75 @@ class PassGenerator:
         y += 25
         draw.text((20, y), f"Expiry Date: {user_pass.expiry_date.strftime('%Y-%m-%d')}", fill='black', font=self.font)
 
-        # Add verification line - now using pixel blocks instead of single pixels
-        line_y = self.height - 30  # Move up slightly to accommodate larger height
-        start_x = (self.width - (self.colorless_width + self.line_spacing + self.colored_width)) // 2
+        # Add verification line with grid pattern
+        line_y = self.height - 40  # Move up to accommodate grid
+        start_x = (self.width - (self.colorless_width + self.line_spacing + self.colored_width) * self.grid_size) // 2
 
-        # Draw colorless part
+        # Draw colorless part in 12x6 grid
         colorless = user_pass.pass_identifier.colorless_part
         for x in range(self.colorless_width):
             for y in range(self.colorless_height):
-                color_value = int(colorless[x * len(colorless) // self.colorless_width], 16) * 16
-                draw.point((start_x + x, line_y + y), fill=(color_value, color_value, color_value))
+                # Calculate color value based on position in grid
+                grid_pos = (y * self.colorless_width + x) % len(colorless)
+                color_value = int(colorless[grid_pos], 16) * 16
+                # Fill grid cell
+                for dx in range(self.grid_size):
+                    for dy in range(self.grid_size):
+                        draw.point(
+                            (start_x + x * self.grid_size + dx, line_y + y * self.grid_size + dy),
+                            fill=(color_value, color_value, color_value)
+                        )
 
-        # Draw colored part
+        # Draw colored part in 12x6 grid
         colored = user_pass.pass_identifier.colored_part
-        colored_start_x = start_x + self.colorless_width + self.line_spacing
+        colored_start_x = start_x + (self.colorless_width * self.grid_size) + self.line_spacing
         for x in range(self.colored_width):
             for y in range(self.colored_height):
-                pos = x * len(colored) // self.colored_width
-                if pos < len(colored):
-                    color_value = int(colored[pos], 16)
-                    color = ((color_value & 4) * 64, (color_value & 2) * 64, (color_value & 1) * 64)
-                    draw.point((colored_start_x + x, line_y + y), fill=color)
+                # Calculate color value based on position in grid
+                grid_pos = (y * self.colored_width + x) % len(colored)
+                color_value = int(colored[grid_pos], 16)
+                color = ((color_value & 4) * 64, (color_value & 2) * 64, (color_value & 1) * 64)
+                # Fill grid cell
+                for dx in range(self.grid_size):
+                    for dy in range(self.grid_size):
+                        draw.point(
+                            (colored_start_x + x * self.grid_size + dx, line_y + y * self.grid_size + dy),
+                            fill=color
+                        )
 
         return img
 
     def extract_verification_line(self, image: Image.Image) -> tuple[str, str]:
         """Extract both parts of the verification line from an image."""
-        line_y = self.height - 30
-        start_x = (self.width - (self.colorless_width + self.line_spacing + self.colored_width)) // 2
+        line_y = self.height - 40
+        start_x = (self.width - (self.colorless_width + self.line_spacing + self.colored_width) * self.grid_size) // 2
         
         # Get the verification line region
         line_data = np.array(image)
 
-        # Extract colorless part - sample center pixel of each column
+        # Extract colorless part - sample center of each grid cell
         colorless_values = []
-        for x in range(self.colorless_width):
-            mid_y = line_y + (self.colorless_height // 2)
-            value = line_data[mid_y][start_x + x][0]  # Get grayscale value
-            colorless_values.append(format(value // 16, 'x'))
+        for y in range(self.colorless_height):
+            for x in range(self.colorless_width):
+                # Get center pixel of grid cell
+                sample_x = start_x + x * self.grid_size + self.grid_size // 2
+                sample_y = line_y + y * self.grid_size + self.grid_size // 2
+                value = line_data[sample_y][sample_x][0]  # Get grayscale value
+                colorless_values.append(format(value // 16, 'x'))
 
-        # Extract colored part - sample center pixel of each column
+        # Extract colored part - sample center of each grid cell
         colored_values = []
-        colored_start_x = start_x + self.colorless_width + self.line_spacing
-        for x in range(self.colored_width):
-            mid_y = line_y + (self.colored_height // 2)
-            r, g, b = line_data[mid_y][colored_start_x + x]
-            color_value = ((r > 32) << 2) | ((g > 32) << 1) | (b > 32)
-            colored_values.append(format(color_value, 'x'))
+        colored_start_x = start_x + (self.colorless_width * self.grid_size) + self.line_spacing
+        for y in range(self.colored_height):
+            for x in range(self.colored_width):
+                # Get center pixel of grid cell
+                sample_x = colored_start_x + x * self.grid_size + self.grid_size // 2
+                sample_y = line_y + y * self.grid_size + self.grid_size // 2
+                r, g, b = line_data[sample_y][sample_x]
+                color_value = ((r > 32) << 2) | ((g > 32) << 1) | (b > 32)
+                colored_values.append(format(color_value, 'x'))
 
-        return (''.join(colorless_values[:6]), ''.join(colored_values[:6]))
+        return (''.join(colorless_values[:72]), ''.join(colored_values[:72]))  # 12x6 = 72 pixels total
 
     def verify_pass_image(self, image_path: str, user_pass: UserPass) -> tuple[bool, list[str], Image.Image]:
         """Verify a pass image and return (is_valid, discrepancies, marked_image)"""
