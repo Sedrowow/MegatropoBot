@@ -81,12 +81,12 @@ class MegatropoBot(commands.Bot):
     async def setup_categories(self, guild: discord.Guild):
         # Check if the category already exists
         existing_category = discord.utils.get(guild.categories, name="Bot Management")
-        if existing_category:
+        if (existing_category):
             cmd_channel = discord.utils.get(existing_category.text_channels, name="megabot-cmd")
             faction_announce = discord.utils.get(existing_category.text_channels, name="faction-announcements")
             nation_announce = discord.utils.get(existing_category.text_channels, name="nation-announcements")
 
-            if cmd_channel and faction_announce and nation_announce:
+            if (cmd_channel and faction_announce and nation_announce):
                 self.command_channels[guild.id] = cmd_channel.id
                 self.faction_announcement_channels[guild.id] = faction_announce.id
                 self.nation_announcement_channels[guild.id] = nation_announce.id
@@ -94,7 +94,7 @@ class MegatropoBot(commands.Bot):
                 return
             else:
                 # Create missing channels inside the existing category
-                if not cmd_channel:
+                if (not cmd_channel):
                     cmd_channel = await existing_category.create_text_channel(
                         "megabot-cmd",
                         overwrites={
@@ -104,7 +104,7 @@ class MegatropoBot(commands.Bot):
                     )
                     self.command_channels[guild.id] = cmd_channel.id
 
-                if not faction_announce:
+                if (not faction_announce):
                     faction_announce = await existing_category.create_text_channel(
                         "faction-announcements",
                         overwrites={
@@ -114,7 +114,7 @@ class MegatropoBot(commands.Bot):
                     )
                     self.faction_announcement_channels[guild.id] = faction_announce.id
 
-                if not nation_announce:
+                if (not nation_announce):
                     nation_announce = await existing_category.create_text_channel(
                         "nation-announcements",
                         overwrites={
@@ -239,41 +239,9 @@ class MegatropoBot(commands.Bot):
         }
         
         try:
-            # Create Bot Management category
-            bot_category = await guild.create_category(
-                "Bot Management",
-                overwrites={
-                    guild.default_role: discord.PermissionOverwrite(read_messages=False),
-                    guild.me: discord.PermissionOverwrite(read_messages=True)
-                }
-            )
-            status["created"].append("Bot Management category")
-
-            # Create command channel
-            cmd_channel = await bot_category.create_text_channel("megabot-cmd")
-            self.command_channels[guild.id] = cmd_channel.id
-            status["created"].append("megabot-cmd channel")
-
-            # Create announcement channels
-            faction_announce = await bot_category.create_text_channel(
-                "faction-announcements",
-                overwrites={
-                    guild.default_role: discord.PermissionOverwrite(send_messages=False),
-                    guild.me: discord.PermissionOverwrite(send_messages=True)
-                }
-            )
-            self.faction_announcement_channels[guild.id] = faction_announce.id
-            status["created"].append("faction-announcements channel")
-
-            nation_announce = await bot_category.create_text_channel(
-                "nation-announcements",
-                overwrites={
-                    guild.default_role: discord.PermissionOverwrite(send_messages=False),
-                    guild.me: discord.PermissionOverwrite(send_messages=True)
-                }
-            )
-            self.nation_announcement_channels[guild.id] = nation_announce.id
-            status["created"].append("nation-announcements channel")
+            # Use setup_categories to create or check existing categories and channels
+            await self.setup_categories(guild)
+            status["created"].append("Bot Management category and channels")
 
             # Create bot role if it doesn't exist
             bot_role = discord.utils.get(guild.roles, name="MegatroBot")
@@ -682,8 +650,10 @@ async def transfer_money(
 @in_command_channel()
 async def grant_pass(interaction: discord.Interaction, user: discord.User, days: int = 30):
     granter = await bot.db.get_user(interaction.user.id)
-    if not granter.nation_id:
-        await interaction.response.send_message("Only nation leaders can grant passes!")
+    faction = await bot.db.get_user_faction(granter.id)
+    
+    if not faction or faction.owner_id != granter.id:
+        await interaction.response.send_message("Only faction owners can grant passes!")
         return
 
     expiry_date = datetime.now() + timedelta(days=days)
