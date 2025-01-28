@@ -79,13 +79,53 @@ class MegatropoBot(commands.Bot):
         print(f"Bot is active in {len(self.guilds)} servers")
 
     async def setup_categories(self, guild: discord.Guild):
-        # Check if the category and channels already exist
+        # Check if the category already exists
         existing_category = discord.utils.get(guild.categories, name="Bot Management")
         if existing_category:
-            self.command_channels[guild.id] = discord.utils.get(existing_category.text_channels, name="megabot-cmd").id
-            self.faction_announcement_channels[guild.id] = discord.utils.get(existing_category.text_channels, name="faction-announcements").id
-            self.nation_announcement_channels[guild.id] = discord.utils.get(existing_category.text_channels, name="nation-announcements").id
-            return
+            cmd_channel = discord.utils.get(existing_category.text_channels, name="megabot-cmd")
+            faction_announce = discord.utils.get(existing_category.text_channels, name="faction-announcements")
+            nation_announce = discord.utils.get(existing_category.text_channels, name="nation-announcements")
+
+            if cmd_channel and faction_announce and nation_announce:
+                self.command_channels[guild.id] = cmd_channel.id
+                self.faction_announcement_channels[guild.id] = faction_announce.id
+                self.nation_announcement_channels[guild.id] = nation_announce.id
+                print("The channels already exist.")
+                return
+            else:
+                # Create missing channels inside the existing category
+                if not cmd_channel:
+                    cmd_channel = await existing_category.create_text_channel(
+                        "megabot-cmd",
+                        overwrites={
+                            guild.default_role: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+                            guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+                        }
+                    )
+                    self.command_channels[guild.id] = cmd_channel.id
+
+                if not faction_announce:
+                    faction_announce = await existing_category.create_text_channel(
+                        "faction-announcements",
+                        overwrites={
+                            guild.default_role: discord.PermissionOverwrite(read_messages=True, send_messages=False, add_reactions=True),
+                            guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+                        }
+                    )
+                    self.faction_announcement_channels[guild.id] = faction_announce.id
+
+                if not nation_announce:
+                    nation_announce = await existing_category.create_text_channel(
+                        "nation-announcements",
+                        overwrites={
+                            guild.default_role: discord.PermissionOverwrite(read_messages=True, send_messages=False, add_reactions=True),
+                            guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+                        }
+                    )
+                    self.nation_announcement_channels[guild.id] = nation_announce.id
+
+                print("Created missing channels inside the existing category.")
+                return
 
         # Create bot management category
         bot_category = await guild.create_category(
