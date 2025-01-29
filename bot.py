@@ -9,6 +9,7 @@ from pass_generator import PassGenerator
 from typing import List, Optional
 from PIL import Image, ImageDraw, ImageFont
 import random
+from io import BytesIO
 
 def in_command_channel():
     """Check if command is used in the correct channel"""
@@ -703,7 +704,27 @@ async def create_faction(interaction: discord.Interaction, name: str):
     success = await bot.db.create_faction(name, user.id)
     if success:
         await bot.db.modify_balance(user.id, -500)
-        await bot.db.create_default_ranks_for_faction(user.id)
+        
+        # Generate and store default icon
+        default_icon = bot.generate_default_icon(name)
+        with BytesIO() as bio:
+            default_icon.save(bio, 'PNG')
+            await bot.db.store_entity_image('faction', success, bio.getvalue())
+
+        # Assign owner rank
+        cursor = bot.db.conn.cursor()
+        cursor.execute(
+            'SELECT id FROM ranks WHERE faction_id = ? AND name = ?',
+            (success, "Owner")
+        )
+        owner_rank = cursor.fetchone()
+        if owner_rank:
+            cursor.execute(
+                'UPDATE users SET rank_id = ? WHERE id = ?',
+                (owner_rank[0], user.id)
+            )
+            bot.db.conn.commit()
+        
         await interaction.response.send_message(f"Faction {name} created successfully!")
     else:
         await interaction.response.send_message("Faction name already exists!")
@@ -764,7 +785,27 @@ async def create_nation(interaction: discord.Interaction, name: str, type: str, 
         success = await bot.db.convert_faction_to_nation(faction.id, name)
         if success:
             await bot.db.modify_faction_balance(faction.id, -1000)
-            await bot.db.create_default_ranks_for_nation(user.id)
+            
+            # Generate and store default icon
+            default_icon = bot.generate_default_icon(name)
+            with BytesIO() as bio:
+                default_icon.save(bio, 'PNG')
+                await bot.db.store_entity_image('nation', success, bio.getvalue())
+
+            # Assign owner rank to nation
+            cursor = bot.db.conn.cursor()
+            cursor.execute(
+                'SELECT id FROM ranks WHERE faction_id = ? AND name = ?',
+                (success, "Owner")
+            )
+            owner_rank = cursor.fetchone()
+            if owner_rank:
+                cursor.execute(
+                    'UPDATE users SET rank_id = ? WHERE id = ?',
+                    (owner_rank[0], user.id)
+                )
+                bot.db.conn.commit()
+
             await interaction.response.send_message(f"Faction converted to nation {name} successfully!")
         else:
             await interaction.response.send_message("Failed to convert faction to nation!")
@@ -776,7 +817,27 @@ async def create_nation(interaction: discord.Interaction, name: str, type: str, 
             success = await bot.db.create_nation(name, user.id)
             if success:
                 await bot.db.modify_balance(user.id, -1000)
-                await bot.db.create_default_ranks_for_nation(user.id)
+                
+                # Generate and store default icon
+                default_icon = bot.generate_default_icon(name)
+                with BytesIO() as bio:
+                    default_icon.save(bio, 'PNG')
+                    await bot.db.store_entity_image('nation', success, bio.getvalue())
+
+                # Assign owner rank
+                cursor = bot.db.conn.cursor()
+                cursor.execute(
+                    'SELECT id FROM ranks WHERE faction_id = ? AND name = ?',
+                    (success, "Owner")
+                )
+                owner_rank = cursor.fetchone()
+                if owner_rank:
+                    cursor.execute(
+                        'UPDATE users SET rank_id = ? WHERE id = ?',
+                        (owner_rank[0], user.id)
+                    )
+                    bot.db.conn.commit()
+
                 await interaction.response.send_message(f"Nation {name} created successfully!")
             else:
                 await interaction.response.send_message("Failed to create nation!")
